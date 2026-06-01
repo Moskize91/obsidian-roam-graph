@@ -74,14 +74,6 @@ export default class RoamGraphPlugin extends Plugin {
       }),
     );
 
-    this.registerEvent(
-      this.app.metadataCache.on("resolved", () => {
-        if (this.lastCenterPath) {
-          this.scheduleRefresh(this.app.vault.getAbstractFileByPath(this.lastCenterPath), { force: true });
-        }
-      }),
-    );
-
     this.app.workspace.onLayoutReady(() => {
       if (this.settings.openCanvasOnStartup) {
         this.runSafely(this.refreshFromActiveFile({ openIfMissing: true }));
