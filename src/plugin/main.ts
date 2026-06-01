@@ -5,13 +5,14 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
+  TFolder,
   TFile,
   normalizePath,
   type WorkspaceLeaf,
 } from "obsidian";
 import { buildGraphCanvas } from "../lib/canvas";
 import {
-  ensureCanvasExtension,
+  getCanvasPathFromFolderPath,
   getDefaultPluginSettings,
   normalizePluginSettings,
   type PluginSettings,
@@ -28,17 +29,18 @@ export default class RoamGraphPlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    await this.saveSettings();
     this.addSettingTab(new RoamGraphSettingTab(this.app, this));
 
     this.addRibbonIcon("waypoints", "Open Roam Graph", () => {
-      void this.refreshFromActiveFile({ reveal: true });
+      this.runSafely(this.refreshFromActiveFile({ reveal: true, openIfMissing: true }));
     });
 
     this.addCommand({
       id: "open-roam-graph",
       name: "Open graph for active note",
       callback: () => {
-        void this.refreshFromActiveFile({ reveal: true });
+        this.runSafely(this.refreshFromActiveFile({ reveal: true, openIfMissing: true }));
       },
     });
 
@@ -46,7 +48,7 @@ export default class RoamGraphPlugin extends Plugin {
       id: "refresh-roam-graph",
       name: "Refresh graph",
       callback: () => {
-        void this.refreshFromActiveFile({ force: true });
+        this.runSafely(this.refreshFromActiveFile({ force: true }));
       },
     });
 
@@ -82,7 +84,7 @@ export default class RoamGraphPlugin extends Plugin {
 
     this.app.workspace.onLayoutReady(() => {
       if (this.settings.openCanvasOnStartup) {
-        void this.refreshFromActiveFile();
+        this.runSafely(this.refreshFromActiveFile({ openIfMissing: true }));
       }
     });
   }
@@ -103,8 +105,15 @@ export default class RoamGraphPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  async refreshFromActiveFile(options: { force?: boolean; reveal?: boolean } = {}): Promise<void> {
-    await this.refreshForFile(this.app.workspace.getActiveFile(), options);
+  private runSafely(task: Promise<void>): void {
+    void task.catch((error) => {
+      console.error("Roam Graph failed.", error);
+      new Notice(error instanceof Error ? `Roam Graph failed: ${error.message}` : "Roam Graph failed.");
+    });
+  }
+
+  async refreshFromActiveFile(options: { force?: boolean; reveal?: boolean; openIfMissing?: boolean } = {}): Promise<void> {
+    await this.refreshForFile(this.getMainWorkspaceMarkdownFile() ?? this.app.workspace.getActiveFile(), options);
   }
 
   private scheduleRefresh(file: unknown, options: { force?: boolean } = {}): void {
@@ -124,11 +133,11 @@ export default class RoamGraphPlugin extends Plugin {
 
   private async refreshForFile(
     file: unknown,
-    options: { force?: boolean; reveal?: boolean; targetGraphLeaf?: WorkspaceLeaf } = {},
+    options: { force?: boolean; reveal?: boolean; openIfMissing?: boolean; targetGraphLeaf?: WorkspaceLeaf } = {},
   ): Promise<void> {
     if (!(file instanceof TFile)) return;
     if (file.extension !== "md") return;
-    if (!options.force && file.path === this.lastCenterPath) return;
+    if (!options.force && !options.openIfMissing && file.path === this.lastCenterPath) return;
 
     this.lastCenterPath = file.path;
 
@@ -144,11 +153,18 @@ export default class RoamGraphPlugin extends Plugin {
     });
 
     await this.app.vault.modify(canvasFile, `${JSON.stringify(canvas, null, 2)}\n`);
-    await this.openCanvasInRightSidebar(canvasFile, options.reveal ?? false, options.targetGraphLeaf);
+    const openOptions: { reveal: boolean; openIfMissing: boolean; targetLeaf?: WorkspaceLeaf } = {
+      reveal: options.reveal ?? false,
+      openIfMissing: options.openIfMissing ?? false,
+    };
+    if (options.targetGraphLeaf) {
+      openOptions.targetLeaf = options.targetGraphLeaf;
+    }
+    await this.openCanvasInRightSidebar(canvasFile, openOptions);
   }
 
   private async ensureCanvasFile(): Promise<TFile> {
-    const canvasPath = normalizePath(ensureCanvasExtension(this.settings.canvasPath));
+    const canvasPath = this.getCanvasPath();
     const existing = this.app.vault.getAbstractFileByPath(canvasPath);
     if (existing instanceof TFile) {
       if (existing.extension !== "canvas") {
@@ -172,27 +188,39 @@ export default class RoamGraphPlugin extends Plugin {
     let current = "";
     for (const part of parts) {
       current = current ? `${current}/${part}` : part;
-      if (!this.app.vault.getAbstractFileByPath(current)) {
+      const existing = this.app.vault.getAbstractFileByPath(current);
+      if (existing instanceof TFolder) continue;
+      if (existing) {
+        throw new Error(`Roam Graph folder path points to a file: ${current}`);
+      }
+      try {
         await this.app.vault.createFolder(current);
+      } catch (error) {
+        if (!isAlreadyExistsError(error)) {
+          throw error;
+        }
       }
     }
   }
 
-  private async openCanvasInRightSidebar(file: TFile, reveal: boolean, targetLeaf?: WorkspaceLeaf): Promise<void> {
+  private async openCanvasInRightSidebar(
+    file: TFile,
+    options: { reveal: boolean; openIfMissing: boolean; targetLeaf?: WorkspaceLeaf },
+  ): Promise<void> {
     const leaf =
-      targetLeaf && this.isLeafInRightSidebar(targetLeaf)
-        ? targetLeaf
-        : this.findRightSidebarGeneratedCanvasLeaf() ??
-          (this.canvasLeaf && this.isLeafInRightSidebar(this.canvasLeaf) ? this.canvasLeaf : null) ??
-          this.app.workspace.getRightLeaf(false);
+      options.targetLeaf && this.isLeafInRightSidebar(options.targetLeaf)
+        ? options.targetLeaf
+        : this.findRightSidebarGeneratedCanvasLeaf() ?? (options.openIfMissing ? this.app.workspace.getRightLeaf(false) : null);
     if (!leaf) {
-      new Notice("Roam Graph could not open the right sidebar.");
+      if (options.openIfMissing) {
+        new Notice("Roam Graph could not open the right sidebar.");
+      }
       return;
     }
     this.canvasLeaf = leaf;
     this.managedGraphLeaves.add(leaf);
     await leaf.openFile(file, { active: false });
-    if (reveal) {
+    if (options.reveal) {
       await this.app.workspace.revealLeaf(leaf);
     }
   }
@@ -270,7 +298,7 @@ export default class RoamGraphPlugin extends Plugin {
   }
 
   private getCanvasPath(): string {
-    return normalizePath(ensureCanvasExtension(this.settings.canvasPath));
+    return normalizePath(getCanvasPathFromFolderPath(this.settings.graphFolderPath));
   }
 
   private isLeafInRightSidebar(leaf: WorkspaceLeaf): boolean {
@@ -296,6 +324,18 @@ export default class RoamGraphPlugin extends Plugin {
     });
     return firstRootLeaf ?? this.app.workspace.getLeaf("tab");
   }
+
+  private getMainWorkspaceMarkdownFile(): TFile | null {
+    const recentLeaf = this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit);
+    const recentFile = this.getMarkdownFileFromLeaf(recentLeaf);
+    if (recentFile) return recentFile;
+
+    let firstMarkdownFile: TFile | null = null;
+    this.app.workspace.iterateRootLeaves((leaf) => {
+      firstMarkdownFile ??= this.getMarkdownFileFromLeaf(leaf);
+    });
+    return firstMarkdownFile;
+  }
 }
 
 class RoamGraphSettingTab extends PluginSettingTab {
@@ -311,15 +351,15 @@ class RoamGraphSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl)
-      .setName("Canvas file")
-      .setDesc("The generated Canvas file used by the sidebar graph.")
+      .setName("Graph folder")
+      .setDesc("Folder for the generated Roam Graph Canvas. Leave empty to use the vault root.")
       .addText((text) => {
         text
-          .setPlaceholder("Roam Graph.canvas")
-          .setValue(this.plugin.settings.canvasPath)
+          .setPlaceholder("Daily")
+          .setValue(this.plugin.settings.graphFolderPath)
           .onChange((value) => {
             void (async () => {
-              this.plugin.settings.canvasPath = ensureCanvasExtension(value.trim() || getDefaultPluginSettings().canvasPath);
+              this.plugin.settings.graphFolderPath = value.trim();
               await this.plugin.saveSettings();
             })();
           });
@@ -400,4 +440,8 @@ class RoamGraphSettingTab extends PluginSettingTab {
       text: "Roam Graph rewrites this Canvas whenever the active Markdown note changes. Native Canvas remains editable; manual edits may be overwritten.",
     });
   }
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes("already exists");
 }
