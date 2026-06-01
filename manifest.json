@@ -1,0 +1,10 @@
+{
+  "id": "roam-graph",
+  "name": "Roam Graph",
+  "version": "0.1.0",
+  "minAppVersion": "1.8.0",
+  "description": "A focus-following local graph in a Canvas sidebar.",
+  "author": "Moskize91",
+  "authorUrl": "https://github.com/moskize91",
+  "isDesktopOnly": false
+}

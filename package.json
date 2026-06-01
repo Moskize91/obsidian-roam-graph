@@ -1,0 +1,40 @@
+{
+  "name": "obsidian-roam-graph",
+  "version": "0.1.0",
+  "description": "A focus-following local graph in a Canvas sidebar.",
+  "main": "plugin-dist/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "npm run prepare:plugin",
+    "build:plugin": "tsup --config tsup.plugin.config.ts",
+    "prepare:plugin": "npm run build:plugin && cp manifest.json plugin-dist/manifest.json && if [ -f styles.css ]; then cp styles.css plugin-dist/styles.css; fi",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run build"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "graph",
+    "canvas",
+    "roam"
+  ],
+  "author": "Moskize91",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moskize91/obsidian-roam-graph.git"
+  },
+  "bugs": {
+    "url": "https://github.com/moskize91/obsidian-roam-graph/issues"
+  },
+  "homepage": "https://github.com/moskize91/obsidian-roam-graph",
+  "engines": {
+    "node": ">=20.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.1",
+    "obsidian": "^1.13.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}
