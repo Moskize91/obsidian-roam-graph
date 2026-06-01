@@ -1,5 +1,6 @@
 import {
   App,
+  MarkdownView,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -21,13 +22,15 @@ export default class RoamGraphPlugin extends Plugin {
   settings: PluginSettings = getDefaultPluginSettings();
   private updateTimer: number | null = null;
   private canvasLeaf: WorkspaceLeaf | null = null;
+  private managedGraphLeaves = new Set<WorkspaceLeaf>();
   private lastCenterPath: string | null = null;
+  private redirectingCanvasLeaf = false;
 
   async onload(): Promise<void> {
     await this.loadSettings();
     this.addSettingTab(new RoamGraphSettingTab(this.app, this));
 
-    this.addRibbonIcon("network", "Open Roam Graph", () => {
+    this.addRibbonIcon("waypoints", "Open Roam Graph", () => {
       void this.refreshFromActiveFile({ reveal: true });
     });
 
@@ -48,8 +51,24 @@ export default class RoamGraphPlugin extends Plugin {
     });
 
     this.registerEvent(
-      this.app.workspace.on("file-open", (file) => {
-        this.scheduleRefresh(file);
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        void this.redirectManagedGraphLeafNavigation();
+        if (leaf && this.isLeafInRightSidebar(leaf)) {
+          return;
+        }
+        this.scheduleRefresh(this.getMarkdownFileFromLeaf(leaf));
+      }),
+    );
+
+    this.registerEvent(
+      this.app.workspace.on("file-open", () => {
+        void this.redirectManagedGraphLeafNavigation();
+      }),
+    );
+
+    this.registerEvent(
+      this.app.workspace.on("layout-change", () => {
+        void this.redirectManagedGraphLeafNavigation();
       }),
     );
 
@@ -98,7 +117,15 @@ export default class RoamGraphPlugin extends Plugin {
     }, this.settings.debounceMs);
   }
 
-  private async refreshForFile(file: unknown, options: { force?: boolean; reveal?: boolean } = {}): Promise<void> {
+  private getMarkdownFileFromLeaf(leaf: WorkspaceLeaf | null): TFile | null {
+    if (!(leaf?.view instanceof MarkdownView)) return null;
+    return leaf.view.file;
+  }
+
+  private async refreshForFile(
+    file: unknown,
+    options: { force?: boolean; reveal?: boolean; targetGraphLeaf?: WorkspaceLeaf } = {},
+  ): Promise<void> {
     if (!(file instanceof TFile)) return;
     if (file.extension !== "md") return;
     if (!options.force && file.path === this.lastCenterPath) return;
@@ -117,7 +144,7 @@ export default class RoamGraphPlugin extends Plugin {
     });
 
     await this.app.vault.modify(canvasFile, `${JSON.stringify(canvas, null, 2)}\n`);
-    await this.openCanvasInRightSidebar(canvasFile, options.reveal ?? false);
+    await this.openCanvasInRightSidebar(canvasFile, options.reveal ?? false, options.targetGraphLeaf);
   }
 
   private async ensureCanvasFile(): Promise<TFile> {
@@ -151,17 +178,123 @@ export default class RoamGraphPlugin extends Plugin {
     }
   }
 
-  private async openCanvasInRightSidebar(file: TFile, reveal: boolean): Promise<void> {
-    const leaf = this.canvasLeaf ?? this.app.workspace.getRightLeaf(false);
+  private async openCanvasInRightSidebar(file: TFile, reveal: boolean, targetLeaf?: WorkspaceLeaf): Promise<void> {
+    const leaf =
+      targetLeaf && this.isLeafInRightSidebar(targetLeaf)
+        ? targetLeaf
+        : this.findRightSidebarGeneratedCanvasLeaf() ??
+          (this.canvasLeaf && this.isLeafInRightSidebar(this.canvasLeaf) ? this.canvasLeaf : null) ??
+          this.app.workspace.getRightLeaf(false);
     if (!leaf) {
       new Notice("Roam Graph could not open the right sidebar.");
       return;
     }
     this.canvasLeaf = leaf;
+    this.managedGraphLeaves.add(leaf);
     await leaf.openFile(file, { active: false });
     if (reveal) {
       await this.app.workspace.revealLeaf(leaf);
     }
+  }
+
+  private async redirectManagedGraphLeafNavigation(): Promise<void> {
+    if (this.redirectingCanvasLeaf) return;
+
+    const navigation = this.findManagedGraphLeafNavigation();
+    if (!navigation) return;
+
+    this.redirectingCanvasLeaf = true;
+    try {
+      const targetLeaf = this.getMainWorkspaceLeaf();
+      await targetLeaf.openFile(navigation.file, { active: true });
+      await this.refreshForFile(navigation.file, { force: true, targetGraphLeaf: navigation.leaf });
+    } finally {
+      this.redirectingCanvasLeaf = false;
+    }
+  }
+
+  private findManagedGraphLeafNavigation(): { leaf: WorkspaceLeaf; file: TFile } | null {
+    const rightLeaves = new Set<WorkspaceLeaf>();
+    let navigation: { leaf: WorkspaceLeaf; file: TFile } | null = null;
+
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (!this.isLeafInRightSidebar(leaf)) {
+        this.managedGraphLeaves.delete(leaf);
+        return;
+      }
+
+      rightLeaves.add(leaf);
+      if (this.isGeneratedCanvasLeaf(leaf)) {
+        this.managedGraphLeaves.add(leaf);
+        return;
+      }
+
+      const file = this.getMarkdownFileFromLeaf(leaf);
+      if (!navigation && file && this.managedGraphLeaves.has(leaf)) {
+        navigation = { leaf, file };
+        return;
+      }
+
+      if (!file) {
+        this.managedGraphLeaves.delete(leaf);
+      }
+    });
+
+    for (const leaf of this.managedGraphLeaves) {
+      if (!rightLeaves.has(leaf)) {
+        this.managedGraphLeaves.delete(leaf);
+      }
+    }
+
+    return navigation;
+  }
+
+  private findRightSidebarGeneratedCanvasLeaf(): WorkspaceLeaf | null {
+    let graphLeaf: WorkspaceLeaf | null = null;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (!graphLeaf && this.isLeafInRightSidebar(leaf) && this.isGeneratedCanvasLeaf(leaf)) {
+        graphLeaf = leaf;
+      }
+    });
+    return graphLeaf;
+  }
+
+  private isGeneratedCanvasLeaf(leaf: WorkspaceLeaf): boolean {
+    const file = this.getFileFromLeaf(leaf);
+    return file?.path === this.getCanvasPath();
+  }
+
+  private getFileFromLeaf(leaf: WorkspaceLeaf | null): TFile | null {
+    const viewWithFile = leaf?.view as { file?: unknown } | undefined;
+    return viewWithFile?.file instanceof TFile ? viewWithFile.file : null;
+  }
+
+  private getCanvasPath(): string {
+    return normalizePath(ensureCanvasExtension(this.settings.canvasPath));
+  }
+
+  private isLeafInRightSidebar(leaf: WorkspaceLeaf): boolean {
+    let item: unknown = leaf;
+    while (item && typeof item === "object") {
+      if (item === this.app.workspace.rightSplit) {
+        return true;
+      }
+      item = "parent" in item ? (item as { parent?: unknown }).parent : null;
+    }
+    return false;
+  }
+
+  private getMainWorkspaceLeaf(): WorkspaceLeaf {
+    const recentLeaf = this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit);
+    if (recentLeaf && recentLeaf !== this.canvasLeaf) {
+      return recentLeaf;
+    }
+
+    let firstRootLeaf: WorkspaceLeaf | null = null;
+    this.app.workspace.iterateRootLeaves((leaf) => {
+      firstRootLeaf ??= leaf;
+    });
+    return firstRootLeaf ?? this.app.workspace.getLeaf("tab");
   }
 }
 
