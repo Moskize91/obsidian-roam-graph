@@ -8,10 +8,7 @@ const LEGACY_DEFAULT_NEIGHBOR_LIMIT = 18;
 export type PluginSettings = {
   graphFolderPath: string;
   layerLimitCount: number;
-  includeBacklinks: boolean;
-  includeOutgoingLinks: boolean;
-  openCanvasOnStartup: boolean;
-  debounceMs: number;
+  dailyContextLimit: number;
 };
 
 type RawPluginSettings = Partial<PluginSettings>;
@@ -19,16 +16,17 @@ type LegacyRawPluginSettings = RawPluginSettings & {
   canvasPath?: string;
   neighborLimit?: number;
   neighborExpandStep?: number;
+  includeBacklinks?: boolean;
+  includeOutgoingLinks?: boolean;
+  openCanvasOnStartup?: boolean;
+  debounceMs?: number;
 };
 
 export function getDefaultPluginSettings(): PluginSettings {
   return {
     graphFolderPath: "",
     layerLimitCount: 4,
-    includeBacklinks: true,
-    includeOutgoingLinks: true,
-    openCanvasOnStartup: true,
-    debounceMs: 150,
+    dailyContextLimit: 2,
   };
 }
 
@@ -41,15 +39,12 @@ export function normalizePluginSettings(raw: LegacyRawPluginSettings | null | un
   const rawLayerLimitCount =
     raw?.layerLimitCount ?? (raw?.neighborLimit === LEGACY_DEFAULT_NEIGHBOR_LIMIT ? undefined : raw?.neighborLimit);
   const layerLimitCount = clampInteger(rawLayerLimitCount, defaults.layerLimitCount, 1, 20);
-  const debounceMs = clampInteger(raw?.debounceMs, defaults.debounceMs, 0, 2000);
+  const dailyContextLimit = clampInteger(raw?.dailyContextLimit, defaults.dailyContextLimit, 0, 20);
 
   return {
     graphFolderPath,
     layerLimitCount,
-    includeBacklinks: raw?.includeBacklinks ?? defaults.includeBacklinks,
-    includeOutgoingLinks: raw?.includeOutgoingLinks ?? defaults.includeOutgoingLinks,
-    openCanvasOnStartup: raw?.openCanvasOnStartup ?? defaults.openCanvasOnStartup,
-    debounceMs,
+    dailyContextLimit,
   };
 }
 

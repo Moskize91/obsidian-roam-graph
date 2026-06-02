@@ -12,7 +12,7 @@ import {
   type WorkspaceLeaf,
 } from "obsidian";
 import { buildGraphCanvas, type GraphSide } from "../lib/canvas";
-import { DAILY_CONTEXT_LIMIT, resolveDailyContext } from "../lib/daily-notes";
+import { resolveDailyContext } from "../lib/daily-notes";
 import {
   getCanvasPathFromFolderPath,
   getDefaultPluginSettings,
@@ -20,6 +20,8 @@ import {
   type PluginSettings,
 } from "../lib/plugin-settings";
 import { getGraphFileInfo, resolveNeighbors } from "../lib/graph";
+
+const REFRESH_DEBOUNCE_MS = 150;
 
 export default class RoamGraphPlugin extends Plugin {
   settings: PluginSettings = getDefaultPluginSettings();
@@ -83,9 +85,7 @@ export default class RoamGraphPlugin extends Plugin {
     );
 
     this.app.workspace.onLayoutReady(() => {
-      if (this.settings.openCanvasOnStartup) {
-        this.runSafely(this.refreshFromActiveFile({ openIfMissing: true }));
-      }
+      this.runSafely(this.refreshFromActiveFile({ openIfMissing: true }));
     });
   }
 
@@ -123,7 +123,7 @@ export default class RoamGraphPlugin extends Plugin {
     this.updateTimer = window.setTimeout(() => {
       this.updateTimer = null;
       void this.refreshForFile(file, options);
-    }, this.settings.debounceMs);
+    }, REFRESH_DEBOUNCE_MS);
   }
 
   private getMarkdownFileFromLeaf(leaf: WorkspaceLeaf | null): TFile | null {
@@ -143,10 +143,10 @@ export default class RoamGraphPlugin extends Plugin {
 
     const canvasFile = await this.ensureCanvasFile();
     const neighbors = resolveNeighbors(this.app, file, {
-      includeOutgoingLinks: this.settings.includeOutgoingLinks,
-      includeBacklinks: this.settings.includeBacklinks,
+      includeOutgoingLinks: true,
+      includeBacklinks: true,
     });
-    const dailyContext = await resolveDailyContext(this.app, file, DAILY_CONTEXT_LIMIT);
+    const dailyContext = await resolveDailyContext(this.app, file, this.settings.dailyContextLimit);
     const canvas = buildGraphCanvas({
       center: getGraphFileInfo(file),
       backlinks: neighbors.backlinks,
@@ -420,54 +420,18 @@ class RoamGraphSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Outgoing links")
-      .setDesc("Show notes linked from the active note.")
-      .addToggle((toggle) => {
-        toggle.setValue(this.plugin.settings.includeOutgoingLinks).onChange((value) => {
-          void (async () => {
-            this.plugin.settings.includeOutgoingLinks = value;
-            await this.plugin.saveSettings();
-            await this.plugin.refreshFromActiveFile({ force: true });
-          })();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Backlinks")
-      .setDesc("Show notes linking back to the active note.")
-      .addToggle((toggle) => {
-        toggle.setValue(this.plugin.settings.includeBacklinks).onChange((value) => {
-          void (async () => {
-            this.plugin.settings.includeBacklinks = value;
-            await this.plugin.saveSettings();
-            await this.plugin.refreshFromActiveFile({ force: true });
-          })();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Open on startup")
-      .setDesc("Open the generated Canvas in the right sidebar when Obsidian is ready.")
-      .addToggle((toggle) => {
-        toggle.setValue(this.plugin.settings.openCanvasOnStartup).onChange((value) => {
-          void (async () => {
-            this.plugin.settings.openCanvasOnStartup = value;
-            await this.plugin.saveSettings();
-          })();
-        });
-      });
-
-    new Setting(containerEl)
-      .setName("Refresh delay")
-      .setDesc("Debounce delay after active note changes, in milliseconds.")
-      .addText((text) => {
-        text
-          .setPlaceholder("150")
-          .setValue(String(this.plugin.settings.debounceMs))
+      .setName("Daily context limit")
+      .setDesc("Maximum nearby daily notes to show on each side of the active daily note.")
+      .addSlider((slider) => {
+        slider
+          .setLimits(0, 20, 1)
+          .setDynamicTooltip()
+          .setValue(this.plugin.settings.dailyContextLimit)
           .onChange((value) => {
             void (async () => {
-              this.plugin.settings.debounceMs = Number.parseInt(value, 10);
+              this.plugin.settings.dailyContextLimit = value;
               await this.plugin.saveSettings();
+              await this.plugin.refreshFromActiveFile({ force: true });
             })();
           });
       });

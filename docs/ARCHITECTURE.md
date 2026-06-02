@@ -42,7 +42,7 @@ npm run check
 5. 写入设置中指定的 `.canvas` 文件，默认是 `Roam Graph.canvas`。
 6. 使用右侧 leaf 打开该 Canvas 文件，并尽量不抢占主编辑焦点。
 
-Canvas 中的 more 节点使用 `obsidian://roam-graph` 协议触发分层展开。初始骨架为每侧第一层 `layerLimitCount` 个邻居加中心节点；每次展开显示下一层。
+Canvas 中的 more 节点使用 `obsidian://roam-graph` 协议触发分层展开。初始骨架为每侧第一层 `layerLimitCount` 个邻居、每侧最多 `dailyContextLimit` 篇邻近日记加中心节点；每次展开显示下一层。
 
 ## Canvas 边界
 

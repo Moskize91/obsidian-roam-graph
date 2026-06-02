@@ -2,8 +2,6 @@ import { moment as obsidianMoment, normalizePath, type App, type TFile } from "o
 import type { GraphNeighbor } from "./canvas";
 import { getGraphFileInfo } from "./graph";
 
-export const DAILY_CONTEXT_LIMIT = 2;
-
 export type DailyContext = {
   previous: GraphNeighbor[];
   next: GraphNeighbor[];
@@ -26,9 +24,9 @@ type MomentParser = (input: string, format: string, strict: boolean) => {
 
 const parseMoment = obsidianMoment as unknown as MomentParser;
 
-export async function resolveDailyContext(app: App, centerFile: TFile, limit: number): Promise<DailyContext> {
-  const contextLimit = Math.max(0, Math.round(limit));
-  if (contextLimit === 0) return { previous: [], next: [] };
+export async function resolveDailyContext(app: App, centerFile: TFile, limitPerSide: number): Promise<DailyContext> {
+  const contextLimitPerSide = Math.max(0, Math.round(limitPerSide));
+  if (contextLimitPerSide === 0) return { previous: [], next: [] };
 
   const settings = await readDailyNotesSettings(app);
   if (!settings) return { previous: [], next: [] };
@@ -44,7 +42,7 @@ export async function resolveDailyContext(app: App, centerFile: TFile, limit: nu
   const centerIndex = entries.findIndex((entry) => entry.file.path === centerFile.path);
   if (centerIndex < 0) return { previous: [], next: [] };
 
-  const selected = selectNearbyEntries(entries, centerIndex, contextLimit);
+  const selected = selectNearbyEntries(entries, centerIndex, contextLimitPerSide);
   return {
     previous: selected.previous.map((entry) => getGraphFileInfo(entry.file)),
     next: selected.next.map((entry) => getGraphFileInfo(entry.file)),
@@ -92,39 +90,11 @@ function getDailyNoteRelativePath(file: TFile, folderPath: string): string | nul
 function selectNearbyEntries(
   entries: DailyNoteEntry[],
   centerIndex: number,
-  limit: number,
+  limitPerSide: number,
 ): { previous: DailyNoteEntry[]; next: DailyNoteEntry[] } {
-  const before = entries.slice(Math.max(0, centerIndex - Math.floor(limit / 2)), centerIndex);
-  const after = entries.slice(centerIndex + 1, centerIndex + 1 + Math.floor(limit / 2));
-  const selectedBefore = [...before];
-  const selectedAfter = [...after];
-
-  while (selectedBefore.length + selectedAfter.length < limit) {
-    const previous = entries[centerIndex - selectedBefore.length - 1];
-    const next = entries[centerIndex + selectedAfter.length + 1];
-    if (!previous && !next) break;
-    if (!previous) {
-      if (!next) break;
-      selectedAfter.push(next);
-      continue;
-    }
-    if (!next) {
-      selectedBefore.unshift(previous);
-      continue;
-    }
-    const centerTime = entries[centerIndex]?.time ?? 0;
-    const previousDistance = Math.abs(centerTime - previous.time);
-    const nextDistance = Math.abs(next.time - centerTime);
-    if (previousDistance < nextDistance) {
-      selectedBefore.unshift(previous);
-    } else {
-      selectedAfter.push(next);
-    }
-  }
-
   return {
-    previous: selectedBefore,
-    next: selectedAfter,
+    previous: entries.slice(Math.max(0, centerIndex - limitPerSide), centerIndex),
+    next: entries.slice(centerIndex + 1, centerIndex + 1 + limitPerSide),
   };
 }
 

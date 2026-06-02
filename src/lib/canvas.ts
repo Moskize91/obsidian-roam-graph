@@ -242,12 +242,24 @@ function buildNeighborLayers(neighbors: GraphNeighbor[], layerLimitCount: number
 }
 
 function buildDailyColumn(input: DailyColumnInput): DailyColumn {
-  const previousNodes = buildDailyFileNodes("daily-previous", input.previous, input.center.x + input.center.width / 2, input.sizeScale, 0);
-  const nextNodes = buildDailyFileNodes("daily-next", input.next, input.center.x + input.center.width / 2, input.sizeScale, previousNodes.length);
-  positionDailyColumn(previousNodes, input.center, nextNodes);
+  const newerNodes = buildDailyFileNodes(
+    "daily-next",
+    [...input.next].reverse(),
+    input.center.x + input.center.width / 2,
+    input.sizeScale,
+    0,
+  );
+  const olderNodes = buildDailyFileNodes(
+    "daily-previous",
+    [...input.previous].reverse(),
+    input.center.x + input.center.width / 2,
+    input.sizeScale,
+    newerNodes.length,
+  );
+  positionDailyColumn(newerNodes, input.center, olderNodes);
   return {
-    nodes: [...previousNodes, ...nextNodes],
-    edges: buildDailyEdges(previousNodes, input.center, nextNodes),
+    nodes: [...newerNodes, ...olderNodes],
+    edges: buildDailyEdges(newerNodes, input.center, olderNodes),
   };
 }
 
@@ -272,25 +284,25 @@ function buildDailyFileNodes(
   });
 }
 
-function positionDailyColumn(previousNodes: CanvasFileNode[], center: CanvasFileNode, nextNodes: CanvasFileNode[]): void {
-  let previousY = center.y - DAILY_NODE_GAP_Y;
-  for (let index = previousNodes.length - 1; index >= 0; index -= 1) {
-    const node = previousNodes[index];
+function positionDailyColumn(newerNodes: CanvasFileNode[], center: CanvasFileNode, olderNodes: CanvasFileNode[]): void {
+  let newerY = center.y - DAILY_NODE_GAP_Y;
+  for (let index = newerNodes.length - 1; index >= 0; index -= 1) {
+    const node = newerNodes[index];
     if (!node) continue;
-    previousY -= node.height;
-    node.y = Math.round(previousY);
-    previousY -= DAILY_NODE_GAP_Y;
+    newerY -= node.height;
+    node.y = Math.round(newerY);
+    newerY -= DAILY_NODE_GAP_Y;
   }
 
-  let nextY = center.y + center.height + DAILY_NODE_GAP_Y;
-  for (const node of nextNodes) {
-    node.y = Math.round(nextY);
-    nextY += node.height + DAILY_NODE_GAP_Y;
+  let olderY = center.y + center.height + DAILY_NODE_GAP_Y;
+  for (const node of olderNodes) {
+    node.y = Math.round(olderY);
+    olderY += node.height + DAILY_NODE_GAP_Y;
   }
 }
 
-function buildDailyEdges(previousNodes: CanvasFileNode[], center: CanvasFileNode, nextNodes: CanvasFileNode[]): CanvasEdge[] {
-  const orderedNodes: Array<CanvasFileNode | typeof center> = [...previousNodes, center, ...nextNodes];
+function buildDailyEdges(newerNodes: CanvasFileNode[], center: CanvasFileNode, olderNodes: CanvasFileNode[]): CanvasEdge[] {
+  const orderedNodes: Array<CanvasFileNode | typeof center> = [...newerNodes, center, ...olderNodes];
   const edges: CanvasEdge[] = [];
   for (let index = 0; index < orderedNodes.length - 1; index += 1) {
     const fromNode = orderedNodes[index];
