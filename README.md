@@ -88,3 +88,17 @@ Developer notes live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Run the 
 ```sh
 npm run check
 ```
+
+## Releasing
+
+Releases are created from GitHub Actions.
+
+1. Update `manifest.json` and `package.json` to the same `x.y.z` version.
+2. Merge the version change into `main`.
+3. Run the **Release** workflow from the GitHub Actions tab.
+
+The workflow builds the plugin, creates a GitHub release whose tag matches `manifest.json.version`, and uploads the files Obsidian needs:
+
+- `main.js`
+- `manifest.json`
+- `styles.css`
