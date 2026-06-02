@@ -3,10 +3,12 @@ export const GRAPH_CANVAS_FILE_NAME = "Roam Graph.canvas";
 const INTERNAL_EXPERIMENT_CANVAS_PATH = `.obsidian/plugins/${PLUGIN_ID}/${GRAPH_CANVAS_FILE_NAME}`;
 const HIDDEN_EXPERIMENT_CANVAS_PATH = `.roam-graph/${GRAPH_CANVAS_FILE_NAME}`;
 const UNDERSCORE_EXPERIMENT_CANVAS_PATH = `_roam-graph/${GRAPH_CANVAS_FILE_NAME}`;
+const LEGACY_DEFAULT_NEIGHBOR_LIMIT = 18;
 
 export type PluginSettings = {
   graphFolderPath: string;
   neighborLimit: number;
+  neighborExpandStep: number;
   includeBacklinks: boolean;
   includeOutgoingLinks: boolean;
   openCanvasOnStartup: boolean;
@@ -21,7 +23,8 @@ type LegacyRawPluginSettings = RawPluginSettings & {
 export function getDefaultPluginSettings(): PluginSettings {
   return {
     graphFolderPath: "",
-    neighborLimit: 18,
+    neighborLimit: 4,
+    neighborExpandStep: 4,
     includeBacklinks: true,
     includeOutgoingLinks: true,
     openCanvasOnStartup: true,
@@ -35,12 +38,15 @@ export function normalizePluginSettings(raw: LegacyRawPluginSettings | null | un
     typeof raw?.graphFolderPath === "string"
       ? normalizeFolderPath(raw.graphFolderPath)
       : normalizeFolderPath(getFolderPathFromLegacyCanvasPath(raw?.canvasPath));
-  const neighborLimit = clampInteger(raw?.neighborLimit, defaults.neighborLimit, 1, 80);
+  const rawNeighborLimit = raw?.neighborLimit === LEGACY_DEFAULT_NEIGHBOR_LIMIT ? undefined : raw?.neighborLimit;
+  const neighborLimit = clampInteger(rawNeighborLimit, defaults.neighborLimit, 1, 20);
+  const neighborExpandStep = clampInteger(raw?.neighborExpandStep, defaults.neighborExpandStep, 1, 20);
   const debounceMs = clampInteger(raw?.debounceMs, defaults.debounceMs, 0, 2000);
 
   return {
     graphFolderPath,
     neighborLimit,
+    neighborExpandStep,
     includeBacklinks: raw?.includeBacklinks ?? defaults.includeBacklinks,
     includeOutgoingLinks: raw?.includeOutgoingLinks ?? defaults.includeOutgoingLinks,
     openCanvasOnStartup: raw?.openCanvasOnStartup ?? defaults.openCanvasOnStartup,
