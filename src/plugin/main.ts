@@ -12,6 +12,7 @@ import {
   type WorkspaceLeaf,
 } from "obsidian";
 import { buildGraphCanvas, type GraphSide } from "../lib/canvas";
+import { DAILY_CONTEXT_LIMIT, resolveDailyContext } from "../lib/daily-notes";
 import {
   getCanvasPathFromFolderPath,
   getDefaultPluginSettings,
@@ -145,10 +146,12 @@ export default class RoamGraphPlugin extends Plugin {
       includeOutgoingLinks: this.settings.includeOutgoingLinks,
       includeBacklinks: this.settings.includeBacklinks,
     });
+    const dailyContext = await resolveDailyContext(this.app, file, DAILY_CONTEXT_LIMIT);
     const canvas = buildGraphCanvas({
       center: getGraphFileInfo(file),
       backlinks: neighbors.backlinks,
       outgoing: neighbors.outgoing,
+      dailyContext,
       layerLimitCount: this.settings.layerLimitCount,
       expandedLayerCounts: this.getExpandedLayerCountsForFile(file),
       buildExpandUrl: (side) => this.buildExpandUrl(file, side),

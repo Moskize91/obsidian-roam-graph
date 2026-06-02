@@ -45,6 +45,10 @@ export type GraphCanvasInput = {
   center: GraphNeighbor;
   backlinks: GraphNeighbor[];
   outgoing: GraphNeighbor[];
+  dailyContext: {
+    previous: GraphNeighbor[];
+    next: GraphNeighbor[];
+  };
   layerLimitCount: number;
   expandedLayerCounts: ReadonlyMap<GraphSide, number>;
   buildExpandUrl: (side: GraphSide) => string;
@@ -57,6 +61,7 @@ const CENTER_COLUMN_X = 0;
 const INNER_LAYER_GAP_X = 216;
 const LAYER_GAP_X = 173;
 const NODE_GAP_Y = 80;
+const DAILY_NODE_GAP_Y = 96;
 const EXPAND_NODE_WIDTH = 300;
 const EXPAND_NODE_HEIGHT = 120;
 const NODE_COLORS = {
@@ -83,7 +88,12 @@ export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
   const outgoing = input.outgoing;
   const backlinkLayers = buildNeighborLayers(backlinks, layerLimitCount);
   const outgoingLayers = buildNeighborLayers(outgoing, layerLimitCount);
-  const sizeScale = buildSizeScale([input.center, ...(backlinkLayers[0] ?? []), ...(outgoingLayers[0] ?? [])]);
+  const dailyContext = {
+    previous: input.dailyContext.previous,
+    next: input.dailyContext.next,
+  };
+  const dailyContextNodes = [...dailyContext.previous, ...dailyContext.next];
+  const sizeScale = buildSizeScale([input.center, ...(backlinkLayers[0] ?? []), ...(outgoingLayers[0] ?? []), ...dailyContextNodes]);
   const centerSize = getNodeSize(input.center, CENTER_SIZE_RANGE, sizeScale);
   const center: CanvasFileNode = {
     id: CENTER_NODE_ID,
@@ -98,6 +108,12 @@ export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
 
   const nodes: CanvasNode[] = [center];
   const edges: CanvasEdge[] = [];
+  const dailyColumn = buildDailyColumn({
+    previous: dailyContext.previous,
+    next: dailyContext.next,
+    center,
+    sizeScale,
+  });
 
   const backlinkColumn = buildSideLayers({
     side: "backlinks",
@@ -117,7 +133,8 @@ export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
     expandedLayerCount: input.expandedLayerCounts.get("outgoing") ?? 0,
     buildExpandUrl: input.buildExpandUrl,
   });
-  nodes.push(...backlinkColumn.nodes, ...outgoingColumn.nodes);
+  nodes.push(...dailyColumn.nodes, ...backlinkColumn.nodes, ...outgoingColumn.nodes);
+  edges.push(...dailyColumn.edges);
 
   backlinkColumn.nodes.forEach((node) => {
     edges.push({
@@ -154,6 +171,18 @@ type SideLayerInput = {
 
 type SideColumn = {
   nodes: CanvasNode[];
+};
+
+type DailyColumnInput = {
+  previous: GraphNeighbor[];
+  next: GraphNeighbor[];
+  center: CanvasFileNode;
+  sizeScale: SizeScale;
+};
+
+type DailyColumn = {
+  nodes: CanvasFileNode[];
+  edges: CanvasEdge[];
 };
 
 type NodeSizeRange = {
@@ -210,6 +239,72 @@ function buildNeighborLayers(neighbors: GraphNeighbor[], layerLimitCount: number
     layers.push(neighbors.slice(index, index + layerLimitCount));
   }
   return layers;
+}
+
+function buildDailyColumn(input: DailyColumnInput): DailyColumn {
+  const previousNodes = buildDailyFileNodes("daily-previous", input.previous, input.center.x + input.center.width / 2, input.sizeScale, 0);
+  const nextNodes = buildDailyFileNodes("daily-next", input.next, input.center.x + input.center.width / 2, input.sizeScale, previousNodes.length);
+  positionDailyColumn(previousNodes, input.center, nextNodes);
+  return {
+    nodes: [...previousNodes, ...nextNodes],
+    edges: buildDailyEdges(previousNodes, input.center, nextNodes),
+  };
+}
+
+function buildDailyFileNodes(
+  prefix: string,
+  neighbors: GraphNeighbor[],
+  centerX: number,
+  sizeScale: SizeScale,
+  indexOffset: number,
+): CanvasFileNode[] {
+  return neighbors.map((neighbor, index) => {
+    const size = getNodeSize(neighbor, NEIGHBOR_SIZE_RANGE, sizeScale);
+    return {
+      id: `${prefix}-${index + indexOffset + 1}`,
+      type: "file" as const,
+      file: neighbor.path,
+      x: Math.round(centerX - size.width / 2),
+      y: 0,
+      width: size.width,
+      height: size.height,
+    };
+  });
+}
+
+function positionDailyColumn(previousNodes: CanvasFileNode[], center: CanvasFileNode, nextNodes: CanvasFileNode[]): void {
+  let previousY = center.y - DAILY_NODE_GAP_Y;
+  for (let index = previousNodes.length - 1; index >= 0; index -= 1) {
+    const node = previousNodes[index];
+    if (!node) continue;
+    previousY -= node.height;
+    node.y = Math.round(previousY);
+    previousY -= DAILY_NODE_GAP_Y;
+  }
+
+  let nextY = center.y + center.height + DAILY_NODE_GAP_Y;
+  for (const node of nextNodes) {
+    node.y = Math.round(nextY);
+    nextY += node.height + DAILY_NODE_GAP_Y;
+  }
+}
+
+function buildDailyEdges(previousNodes: CanvasFileNode[], center: CanvasFileNode, nextNodes: CanvasFileNode[]): CanvasEdge[] {
+  const orderedNodes: Array<CanvasFileNode | typeof center> = [...previousNodes, center, ...nextNodes];
+  const edges: CanvasEdge[] = [];
+  for (let index = 0; index < orderedNodes.length - 1; index += 1) {
+    const fromNode = orderedNodes[index];
+    const toNode = orderedNodes[index + 1];
+    if (!fromNode || !toNode) continue;
+    edges.push({
+      id: `edge-daily-${fromNode.id}-${toNode.id}`,
+      fromNode: fromNode.id,
+      fromSide: "bottom",
+      toNode: toNode.id,
+      toSide: "top",
+    });
+  }
+  return edges;
 }
 
 function getFirstLayerEdgeX(side: GraphSide, center: CanvasFileNode): number {
