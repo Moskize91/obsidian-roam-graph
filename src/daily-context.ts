@@ -1,11 +1,6 @@
 import { moment as obsidianMoment, normalizePath, type App, type TFile } from "obsidian";
-import type { GraphNeighbor } from "./canvas";
-import { getGraphFileInfo } from "./graph";
-
-export type DailyContext = {
-  previous: GraphNeighbor[];
-  next: GraphNeighbor[];
-};
+import type { DailyContext } from "./graph-model";
+import { getGraphFile } from "./link-neighborhood";
 
 type DailyNotesSettings = {
   folder: string;
@@ -44,8 +39,8 @@ export async function resolveDailyContext(app: App, centerFile: TFile, limitPerS
 
   const selected = selectNearbyEntries(entries, centerIndex, contextLimitPerSide);
   return {
-    previous: selected.previous.map((entry) => getGraphFileInfo(entry.file)),
-    next: selected.next.map((entry) => getGraphFileInfo(entry.file)),
+    previous: selected.previous.map((entry) => getGraphFile(entry.file)),
+    next: selected.next.map((entry) => getGraphFile(entry.file)),
   };
 }
 

@@ -5,9 +5,9 @@
 # 现状总览
 
 - 当前只有一个发布面：Obsidian community plugin。没有 CLI，不要引入参考项目中的 CLI、子进程、vault discovery 或全局安装流程。
-- 插件入口是 `src/plugin/main.ts`，纯逻辑放在 `src/lib/`。
-- `src/lib/graph.ts` 负责从 Obsidian metadata cache 解析 outgoing links 和 backlinks。
-- `src/lib/canvas.ts` 负责生成 Obsidian Canvas JSON。
+- 插件入口是 `src/main.ts`，运行编排在 `src/refresh-controller.ts`。
+- `src/link-neighborhood.ts` 负责从 Obsidian metadata cache 解析 outgoing links 和 backlinks。
+- `src/graph-canvas.ts` 负责生成 Obsidian Canvas JSON。
 - 构建产物不作为源码维护：plugin release staging 输出到 `plugin-dist/`。
 - 开发安装使用 `npm run install:plugin`，它会把 `plugin-dist/` 复制到 `.env.local` 中 `OBSIDIAN_DEV_VAULT` 指向的 vault。
 

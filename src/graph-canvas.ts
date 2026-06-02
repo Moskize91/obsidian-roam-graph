@@ -1,60 +1,15 @@
-export type CanvasFileNode = {
-  id: string;
-  type: "file";
-  file: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  color?: string;
-};
-
-export type CanvasTextNode = {
-  id: string;
-  type: "text";
-  text: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  color?: string;
-};
-
-export type CanvasNode = CanvasFileNode | CanvasTextNode;
-
-export type CanvasEdge = {
-  id: string;
-  fromNode: string;
-  fromSide: "top" | "right" | "bottom" | "left";
-  toNode: string;
-  toSide: "top" | "right" | "bottom" | "left";
-};
-
-export type CanvasData = {
-  nodes: CanvasNode[];
-  edges: CanvasEdge[];
-};
-
-export type GraphNeighbor = {
-  path: string;
-  size: number;
-  mtime: number;
-};
+import type { CanvasData, CanvasEdge, CanvasFileNode, CanvasNode, CanvasTextNode } from "./canvas-types";
+import type { DailyContext, GraphFile, GraphSide } from "./graph-model";
 
 export type GraphCanvasInput = {
-  center: GraphNeighbor;
-  backlinks: GraphNeighbor[];
-  outgoing: GraphNeighbor[];
-  dailyContext: {
-    previous: GraphNeighbor[];
-    next: GraphNeighbor[];
-  };
+  center: GraphFile;
+  backlinks: GraphFile[];
+  outgoing: GraphFile[];
+  dailyContext: DailyContext;
   layerLimitCount: number;
   expandedLayerCounts: ReadonlyMap<GraphSide, number>;
   buildExpandUrl: (side: GraphSide) => string;
 };
-
-export type GraphSide = "backlinks" | "outgoing";
 
 const CENTER_NODE_ID = "center";
 const CENTER_COLUMN_X = 0;
@@ -162,7 +117,7 @@ export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
 type SideLayerInput = {
   side: GraphSide;
   prefix: string;
-  layers: GraphNeighbor[][];
+  layers: GraphFile[][];
   center: CanvasFileNode;
   sizeScale: SizeScale;
   expandedLayerCount: number;
@@ -174,8 +129,8 @@ type SideColumn = {
 };
 
 type DailyColumnInput = {
-  previous: GraphNeighbor[];
-  next: GraphNeighbor[];
+  previous: GraphFile[];
+  next: GraphFile[];
   center: CanvasFileNode;
   sizeScale: SizeScale;
 };
@@ -233,8 +188,8 @@ function buildSideLayers(input: SideLayerInput): SideColumn {
   return { nodes };
 }
 
-function buildNeighborLayers(neighbors: GraphNeighbor[], layerLimitCount: number): GraphNeighbor[][] {
-  const layers: GraphNeighbor[][] = [];
+function buildNeighborLayers(neighbors: GraphFile[], layerLimitCount: number): GraphFile[][] {
+  const layers: GraphFile[][] = [];
   for (let index = 0; index < neighbors.length; index += layerLimitCount) {
     layers.push(neighbors.slice(index, index + layerLimitCount));
   }
@@ -265,7 +220,7 @@ function buildDailyColumn(input: DailyColumnInput): DailyColumn {
 
 function buildDailyFileNodes(
   prefix: string,
-  neighbors: GraphNeighbor[],
+  neighbors: GraphFile[],
   centerX: number,
   sizeScale: SizeScale,
   indexOffset: number,
@@ -329,7 +284,7 @@ function getNextLayerEdgeX(side: GraphSide, currentEdgeX: number, previousLayerM
     : currentEdgeX + previousLayerMaxWidth + LAYER_GAP_X;
 }
 
-function sortNeighborsNewestFirst(neighbors: GraphNeighbor[]): GraphNeighbor[] {
+function sortNeighborsNewestFirst(neighbors: GraphFile[]): GraphFile[] {
   return [...neighbors].sort((a, b) => {
     if (a.mtime !== b.mtime) return b.mtime - a.mtime;
     return a.path.localeCompare(b.path);
@@ -338,7 +293,7 @@ function sortNeighborsNewestFirst(neighbors: GraphNeighbor[]): GraphNeighbor[] {
 
 function buildFileNodes(
   prefix: string,
-  neighbors: GraphNeighbor[],
+  neighbors: GraphFile[],
   side: GraphSide,
   edgeX: number,
   sizeScale: SizeScale,
@@ -401,7 +356,7 @@ function getLayerHeight(nodes: CanvasNode[], gap: number): number {
   return nodes.reduce((total, node) => total + node.height, 0) + Math.max(nodes.length - 1, 0) * gap;
 }
 
-function buildSizeScale(nodes: GraphNeighbor[]): SizeScale {
+function buildSizeScale(nodes: GraphFile[]): SizeScale {
   const logSizes = nodes.map((node) => Math.log(Math.max(node.size, 0) + 1));
   return {
     minLogSize: Math.min(...logSizes),
@@ -409,7 +364,7 @@ function buildSizeScale(nodes: GraphNeighbor[]): SizeScale {
   };
 }
 
-function getNodeSize(node: GraphNeighbor, range: NodeSizeRange, scale: SizeScale): NodeSize {
+function getNodeSize(node: GraphFile, range: NodeSizeRange, scale: SizeScale): NodeSize {
   const width = interpolateByLogSize(node.size, range.minWidth, range.maxWidth, scale);
   const height = interpolateByLogSize(node.size, range.minHeight, range.maxHeight, scale);
   return {
