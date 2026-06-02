@@ -14,6 +14,8 @@ export class WorkspaceGraphView {
   constructor(
     private readonly app: App,
     private readonly getCanvasPath: () => string,
+    private readonly getCurrentCenterPath: () => string | null,
+    private readonly restoreCanvasInLeaf: (targetLeaf: WorkspaceLeaf) => Promise<void>,
     private readonly refreshForFile: (file: TFile, options: { force?: boolean; targetGraphLeaf?: WorkspaceLeaf }) => Promise<void>,
   ) {}
 
@@ -51,6 +53,10 @@ export class WorkspaceGraphView {
     try {
       const targetLeaf = this.getMainWorkspaceLeaf();
       await targetLeaf.openFile(navigation.file, { active: true });
+      if (navigation.file.path === this.getCurrentCenterPath()) {
+        await this.restoreCanvasInLeaf(navigation.leaf);
+        return;
+      }
       await this.refreshForFile(navigation.file, { force: true, targetGraphLeaf: navigation.leaf });
     } finally {
       this.redirectingCanvasLeaf = false;

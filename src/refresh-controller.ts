@@ -23,6 +23,8 @@ export class RefreshController {
     this.workspaceView = new WorkspaceGraphView(
       app,
       () => this.getCanvasPath(),
+      () => this.lastCenterPath,
+      (targetLeaf) => this.restoreCanvasInLeaf(targetLeaf),
       (file, options) => this.refreshForFile(file, options),
     );
   }
@@ -108,6 +110,15 @@ export class RefreshController {
 
   private getCanvasPath(): string {
     return normalizePath(getCanvasPathFromFolderPath(this.getSettings().graphFolderPath));
+  }
+
+  private async restoreCanvasInLeaf(targetLeaf: WorkspaceLeaf): Promise<void> {
+    const canvasFile = await ensureGraphCanvasFile(this.app, this.getCanvasPath());
+    await this.workspaceView.openCanvasInRightSidebar(canvasFile, {
+      reveal: false,
+      openIfMissing: false,
+      targetLeaf,
+    });
   }
 
   private getExpandedLayerCountsForFile(file: TFile): ReadonlyMap<GraphSide, number> {

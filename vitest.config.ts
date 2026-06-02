@@ -6,7 +6,14 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json", "html"],
       reportsDirectory: "coverage",
-      include: ["src/settings.ts", "src/link-neighborhood.ts", "src/daily-context.ts", "src/graph-canvas.ts", "src/canvas-file.ts"],
+      include: [
+        "src/settings.ts",
+        "src/link-neighborhood.ts",
+        "src/daily-context.ts",
+        "src/graph-canvas.ts",
+        "src/canvas-file.ts",
+        "src/workspace-graph-view.ts",
+      ],
       thresholds: {
         branches: 70,
         functions: 75,
