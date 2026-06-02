@@ -4,7 +4,7 @@ export default defineConfig({
   clean: true,
   dts: false,
   entry: {
-    main: "src/plugin/main.ts",
+    main: "src/main.ts",
   },
   external: ["obsidian"],
   format: ["cjs"],

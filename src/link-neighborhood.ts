@@ -1,14 +1,9 @@
 import type { App, ReferenceCache, TFile } from "obsidian";
-import type { GraphNeighbor } from "./canvas";
+import type { GraphFile, LinkNeighborhood } from "./graph-model";
 
-export type ResolveGraphOptions = {
+export type ResolveLinkNeighborhoodOptions = {
   includeOutgoingLinks: boolean;
   includeBacklinks: boolean;
-};
-
-export type ResolvedGraph = {
-  backlinks: GraphNeighbor[];
-  outgoing: GraphNeighbor[];
 };
 
 type NeighborRelation = {
@@ -19,7 +14,11 @@ type NeighborRelation = {
   firstOffset?: number;
 };
 
-export function resolveNeighbors(app: App, centerFile: TFile, options: ResolveGraphOptions): ResolvedGraph {
+export function resolveLinkNeighborhood(
+  app: App,
+  centerFile: TFile,
+  options: ResolveLinkNeighborhoodOptions,
+): LinkNeighborhood {
   const outgoing = options.includeOutgoingLinks ? resolveOutgoingLinks(app, centerFile) : [];
   const outgoingPaths = new Set(outgoing.map((item) => item.path));
   const backlinks = options.includeBacklinks
@@ -34,7 +33,7 @@ export function resolveNeighbors(app: App, centerFile: TFile, options: ResolveGr
   };
 }
 
-export function getGraphFileInfo(file: TFile): GraphNeighbor {
+export function getGraphFile(file: TFile): GraphFile {
   return {
     path: file.path,
     size: file.stat.size,
@@ -42,7 +41,7 @@ export function getGraphFileInfo(file: TFile): GraphNeighbor {
   };
 }
 
-function resolveOutgoingLinks(app: App, centerFile: TFile): GraphNeighbor[] {
+function resolveOutgoingLinks(app: App, centerFile: TFile): GraphFile[] {
   const byPath = new Map<string, NeighborRelation>();
   const cache = app.metadataCache.getFileCache(centerFile);
   const references = cache?.links ?? [];
@@ -59,7 +58,7 @@ function resolveBacklinks(
   app: App,
   centerFile: TFile,
   options: { excludePaths: ReadonlySet<string> },
-): GraphNeighbor[] {
+): GraphFile[] {
   const byPath = new Map<string, NeighborRelation>();
   for (const [sourcePath, targets] of Object.entries(app.metadataCache.resolvedLinks)) {
     if (!(centerFile.path in targets)) continue;
@@ -94,7 +93,7 @@ function addOutgoingRelation(byPath: Map<string, NeighborRelation>, file: TFile,
   });
 }
 
-function sortOutgoingRelations(byPath: Map<string, NeighborRelation>): GraphNeighbor[] {
+function sortOutgoingRelations(byPath: Map<string, NeighborRelation>): GraphFile[] {
   return [...byPath.values()]
     .sort((a, b) => {
       const countDiff = (b.count ?? 0) - (a.count ?? 0);
@@ -103,19 +102,19 @@ function sortOutgoingRelations(byPath: Map<string, NeighborRelation>): GraphNeig
       if (offsetDiff !== 0) return offsetDiff;
       return a.path.localeCompare(b.path);
     })
-    .map(toGraphNeighbor);
+    .map(toGraphFile);
 }
 
-function sortBacklinkRelations(byPath: Map<string, NeighborRelation>): GraphNeighbor[] {
+function sortBacklinkRelations(byPath: Map<string, NeighborRelation>): GraphFile[] {
   return [...byPath.values()]
     .sort((a, b) => {
       if (a.mtime !== b.mtime) return b.mtime - a.mtime;
       return a.path.localeCompare(b.path);
     })
-    .map(toGraphNeighbor);
+    .map(toGraphFile);
 }
 
-function toGraphNeighbor({ path, size, mtime }: NeighborRelation): GraphNeighbor {
+function toGraphFile({ path, size, mtime }: NeighborRelation): GraphFile {
   return { path, size, mtime };
 }
 
