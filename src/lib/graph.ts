@@ -4,7 +4,6 @@ import type { GraphNeighbor } from "./canvas";
 export type ResolveGraphOptions = {
   includeOutgoingLinks: boolean;
   includeBacklinks: boolean;
-  limit: number;
 };
 
 export type ResolvedGraph = {
@@ -19,10 +18,10 @@ type NeighborRelation = {
 };
 
 export function resolveNeighbors(app: App, centerFile: TFile, options: ResolveGraphOptions): ResolvedGraph {
-  const outgoing = options.includeOutgoingLinks ? resolveOutgoingLinks(app, centerFile, options.limit) : [];
+  const outgoing = options.includeOutgoingLinks ? resolveOutgoingLinks(app, centerFile) : [];
   const outgoingPaths = new Set(outgoing.map((item) => item.path));
   const backlinks = options.includeBacklinks
-    ? resolveBacklinks(app, centerFile, options.limit, {
+    ? resolveBacklinks(app, centerFile, {
         excludePaths: outgoingPaths,
       })
     : [];
@@ -37,10 +36,11 @@ export function getGraphFileInfo(file: TFile): GraphNeighbor {
   return {
     path: file.path,
     size: file.stat.size,
+    mtime: file.stat.mtime,
   };
 }
 
-function resolveOutgoingLinks(app: App, centerFile: TFile, limit: number): GraphNeighbor[] {
+function resolveOutgoingLinks(app: App, centerFile: TFile): GraphNeighbor[] {
   const byPath = new Map<string, NeighborRelation>();
   const resolved = app.metadataCache.resolvedLinks[centerFile.path] ?? {};
   for (const path of Object.keys(resolved)) {
@@ -49,13 +49,12 @@ function resolveOutgoingLinks(app: App, centerFile: TFile, limit: number): Graph
     byPath.set(file.path, getNeighborRelation(file));
   }
 
-  return sortAndLimitRelations(byPath, limit);
+  return sortRelations(byPath);
 }
 
 function resolveBacklinks(
   app: App,
   centerFile: TFile,
-  limit: number,
   options: { excludePaths: ReadonlySet<string> },
 ): GraphNeighbor[] {
   const byPath = new Map<string, NeighborRelation>();
@@ -67,7 +66,7 @@ function resolveBacklinks(
     byPath.set(file.path, getNeighborRelation(file));
   }
 
-  return sortAndLimitRelations(byPath, limit);
+  return sortRelations(byPath);
 }
 
 function getNeighborRelation(file: TFile): NeighborRelation {
@@ -78,14 +77,13 @@ function getNeighborRelation(file: TFile): NeighborRelation {
   };
 }
 
-function sortAndLimitRelations(byPath: Map<string, NeighborRelation>, limit: number): GraphNeighbor[] {
+function sortRelations(byPath: Map<string, NeighborRelation>): GraphNeighbor[] {
   return [...byPath.values()]
     .sort((a, b) => {
       if (a.mtime !== b.mtime) return b.mtime - a.mtime;
       return a.path.localeCompare(b.path);
     })
-    .slice(0, limit)
-    .map(({ path, size }) => ({ path, size }));
+    .map(({ path, size, mtime }) => ({ path, size, mtime }));
 }
 
 function isMarkdownFile(file: unknown): file is TFile {

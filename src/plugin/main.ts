@@ -8,9 +8,10 @@ import {
   TFolder,
   TFile,
   normalizePath,
+  type ObsidianProtocolData,
   type WorkspaceLeaf,
 } from "obsidian";
-import { buildGraphCanvas } from "../lib/canvas";
+import { buildGraphCanvas, type GraphSide } from "../lib/canvas";
 import {
   getCanvasPathFromFolderPath,
   getDefaultPluginSettings,
@@ -25,6 +26,8 @@ export default class RoamGraphPlugin extends Plugin {
   private canvasLeaf: WorkspaceLeaf | null = null;
   private managedGraphLeaves = new Set<WorkspaceLeaf>();
   private lastCenterPath: string | null = null;
+  private expandedCenterPath: string | null = null;
+  private expandedCounts = new Map<GraphSide, number>();
   private redirectingCanvasLeaf = false;
 
   async onload(): Promise<void> {
@@ -50,6 +53,10 @@ export default class RoamGraphPlugin extends Plugin {
       callback: () => {
         this.runSafely(this.refreshFromActiveFile({ force: true }));
       },
+    });
+
+    this.registerObsidianProtocolHandler("roam-graph", (params) => {
+      this.runSafely(this.handleProtocol(params));
     });
 
     this.registerEvent(
@@ -137,12 +144,15 @@ export default class RoamGraphPlugin extends Plugin {
     const neighbors = resolveNeighbors(this.app, file, {
       includeOutgoingLinks: this.settings.includeOutgoingLinks,
       includeBacklinks: this.settings.includeBacklinks,
-      limit: this.settings.neighborLimit,
     });
     const canvas = buildGraphCanvas({
       center: getGraphFileInfo(file),
       backlinks: neighbors.backlinks,
       outgoing: neighbors.outgoing,
+      neighborLimit: this.settings.neighborLimit,
+      neighborExpandStep: this.settings.neighborExpandStep,
+      expandedCounts: this.getExpandedCountsForFile(file),
+      buildExpandUrl: (side) => this.buildExpandUrl(file, side),
     });
 
     await this.app.vault.modify(canvasFile, `${JSON.stringify(canvas, null, 2)}\n`);
@@ -154,6 +164,26 @@ export default class RoamGraphPlugin extends Plugin {
       openOptions.targetLeaf = options.targetGraphLeaf;
     }
     await this.openCanvasInRightSidebar(canvasFile, openOptions);
+  }
+
+  private async handleProtocol(params: ObsidianProtocolData): Promise<void> {
+    const side = parseGraphSide(params.side);
+    const centerPath = typeof params.center === "string" ? params.center : "";
+    if (!side || !centerPath) return;
+
+    const currentCenterPath = this.lastCenterPath;
+    if (currentCenterPath !== centerPath) {
+      return;
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(centerPath);
+    if (!(file instanceof TFile) || file.extension !== "md") {
+      return;
+    }
+
+    this.expandedCenterPath = centerPath;
+    this.expandedCounts.set(side, (this.expandedCounts.get(side) ?? 0) + this.settings.neighborExpandStep);
+    await this.refreshForFile(file, { force: true });
   }
 
   private async ensureCanvasFile(): Promise<TFile> {
@@ -294,6 +324,18 @@ export default class RoamGraphPlugin extends Plugin {
     return normalizePath(getCanvasPathFromFolderPath(this.settings.graphFolderPath));
   }
 
+  private getExpandedCountsForFile(file: TFile): ReadonlyMap<GraphSide, number> {
+    if (this.expandedCenterPath !== file.path) {
+      this.expandedCenterPath = file.path;
+      this.expandedCounts.clear();
+    }
+    return this.expandedCounts;
+  }
+
+  private buildExpandUrl(file: TFile, side: GraphSide): string {
+    return `obsidian://roam-graph?side=${encodeURIComponent(side)}&center=${encodeURIComponent(file.path)}`;
+  }
+
   private isLeafInRightSidebar(leaf: WorkspaceLeaf): boolean {
     let item: unknown = leaf;
     while (item && typeof item === "object") {
@@ -376,6 +418,23 @@ class RoamGraphSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("Expand step")
+      .setDesc("Additional linked notes to show each time a more node is clicked.")
+      .addSlider((slider) => {
+        slider
+          .setLimits(1, 20, 1)
+          .setDynamicTooltip()
+          .setValue(this.plugin.settings.neighborExpandStep)
+          .onChange((value) => {
+            void (async () => {
+              this.plugin.settings.neighborExpandStep = value;
+              await this.plugin.saveSettings();
+              await this.plugin.refreshFromActiveFile({ force: true });
+            })();
+          });
+      });
+
+    new Setting(containerEl)
       .setName("Outgoing links")
       .setDesc("Show notes linked from the active note.")
       .addToggle((toggle) => {
@@ -437,4 +496,8 @@ class RoamGraphSettingTab extends PluginSettingTab {
 
 function isAlreadyExistsError(error: unknown): boolean {
   return error instanceof Error && error.message.toLowerCase().includes("already exists");
+}
+
+function parseGraphSide(value: unknown): GraphSide | null {
+  return value === "backlinks" || value === "outgoing" ? value : null;
 }
