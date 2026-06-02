@@ -2,6 +2,7 @@
 
 node_modules/
 dist/
+coverage/
 plugin-dist/
 .DS_Store
 npm-debug.log*

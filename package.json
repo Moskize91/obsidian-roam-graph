@@ -9,8 +9,10 @@
     "build:plugin": "tsup --config tsup.plugin.config.ts",
     "prepare:plugin": "npm run build:plugin && cp manifest.json plugin-dist/manifest.json && if [ -f styles.css ]; then cp styles.css plugin-dist/styles.css; fi",
     "install:plugin": "npm run prepare:plugin && node scripts/install-plugin-dev.mjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run build"
+    "check": "npm run typecheck && npm run test:coverage && npm run build"
   },
   "keywords": [
     "obsidian",
@@ -34,8 +36,10 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.1",
+    "@vitest/coverage-v8": "^4.1.8",
     "obsidian": "^1.13.0",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
   }
 }
