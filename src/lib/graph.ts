@@ -1,4 +1,4 @@
-import type { App, TFile } from "obsidian";
+import type { App, ReferenceCache, TFile } from "obsidian";
 import type { GraphNeighbor } from "./canvas";
 
 export type ResolveGraphOptions = {
@@ -15,6 +15,8 @@ type NeighborRelation = {
   path: string;
   size: number;
   mtime: number;
+  count?: number;
+  firstOffset?: number;
 };
 
 export function resolveNeighbors(app: App, centerFile: TFile, options: ResolveGraphOptions): ResolvedGraph {
@@ -42,14 +44,15 @@ export function getGraphFileInfo(file: TFile): GraphNeighbor {
 
 function resolveOutgoingLinks(app: App, centerFile: TFile): GraphNeighbor[] {
   const byPath = new Map<string, NeighborRelation>();
-  const resolved = app.metadataCache.resolvedLinks[centerFile.path] ?? {};
-  for (const path of Object.keys(resolved)) {
-    const file = app.vault.getAbstractFileByPath(path);
+  const cache = app.metadataCache.getFileCache(centerFile);
+  const references = cache?.links ?? [];
+  for (const reference of references) {
+    const file = app.metadataCache.getFirstLinkpathDest(reference.link, centerFile.path);
     if (!isMarkdownFile(file) || file.path === centerFile.path) continue;
-    byPath.set(file.path, getNeighborRelation(file));
+    addOutgoingRelation(byPath, file, reference);
   }
 
-  return sortRelations(byPath);
+  return sortOutgoingRelations(byPath);
 }
 
 function resolveBacklinks(
@@ -66,7 +69,7 @@ function resolveBacklinks(
     byPath.set(file.path, getNeighborRelation(file));
   }
 
-  return sortRelations(byPath);
+  return sortBacklinkRelations(byPath);
 }
 
 function getNeighborRelation(file: TFile): NeighborRelation {
@@ -77,13 +80,43 @@ function getNeighborRelation(file: TFile): NeighborRelation {
   };
 }
 
-function sortRelations(byPath: Map<string, NeighborRelation>): GraphNeighbor[] {
+function addOutgoingRelation(byPath: Map<string, NeighborRelation>, file: TFile, reference: ReferenceCache): void {
+  const existing = byPath.get(file.path);
+  if (existing) {
+    existing.count = (existing.count ?? 0) + 1;
+    existing.firstOffset = Math.min(existing.firstOffset ?? reference.position.start.offset, reference.position.start.offset);
+    return;
+  }
+  byPath.set(file.path, {
+    ...getNeighborRelation(file),
+    count: 1,
+    firstOffset: reference.position.start.offset,
+  });
+}
+
+function sortOutgoingRelations(byPath: Map<string, NeighborRelation>): GraphNeighbor[] {
+  return [...byPath.values()]
+    .sort((a, b) => {
+      const countDiff = (b.count ?? 0) - (a.count ?? 0);
+      if (countDiff !== 0) return countDiff;
+      const offsetDiff = (a.firstOffset ?? Number.MAX_SAFE_INTEGER) - (b.firstOffset ?? Number.MAX_SAFE_INTEGER);
+      if (offsetDiff !== 0) return offsetDiff;
+      return a.path.localeCompare(b.path);
+    })
+    .map(toGraphNeighbor);
+}
+
+function sortBacklinkRelations(byPath: Map<string, NeighborRelation>): GraphNeighbor[] {
   return [...byPath.values()]
     .sort((a, b) => {
       if (a.mtime !== b.mtime) return b.mtime - a.mtime;
       return a.path.localeCompare(b.path);
     })
-    .map(({ path, size, mtime }) => ({ path, size, mtime }));
+    .map(toGraphNeighbor);
+}
+
+function toGraphNeighbor({ path, size, mtime }: NeighborRelation): GraphNeighbor {
+  return { path, size, mtime };
 }
 
 function isMarkdownFile(file: unknown): file is TFile {

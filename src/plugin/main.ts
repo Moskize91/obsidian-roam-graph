@@ -27,7 +27,7 @@ export default class RoamGraphPlugin extends Plugin {
   private managedGraphLeaves = new Set<WorkspaceLeaf>();
   private lastCenterPath: string | null = null;
   private expandedCenterPath: string | null = null;
-  private expandedCounts = new Map<GraphSide, number>();
+  private expandedLayerCounts = new Map<GraphSide, number>();
   private redirectingCanvasLeaf = false;
 
   async onload(): Promise<void> {
@@ -149,9 +149,8 @@ export default class RoamGraphPlugin extends Plugin {
       center: getGraphFileInfo(file),
       backlinks: neighbors.backlinks,
       outgoing: neighbors.outgoing,
-      neighborLimit: this.settings.neighborLimit,
-      neighborExpandStep: this.settings.neighborExpandStep,
-      expandedCounts: this.getExpandedCountsForFile(file),
+      layerLimitCount: this.settings.layerLimitCount,
+      expandedLayerCounts: this.getExpandedLayerCountsForFile(file),
       buildExpandUrl: (side) => this.buildExpandUrl(file, side),
     });
 
@@ -182,7 +181,7 @@ export default class RoamGraphPlugin extends Plugin {
     }
 
     this.expandedCenterPath = centerPath;
-    this.expandedCounts.set(side, (this.expandedCounts.get(side) ?? 0) + this.settings.neighborExpandStep);
+    this.expandedLayerCounts.set(side, (this.expandedLayerCounts.get(side) ?? 0) + 1);
     await this.refreshForFile(file, { force: true });
   }
 
@@ -324,12 +323,12 @@ export default class RoamGraphPlugin extends Plugin {
     return normalizePath(getCanvasPathFromFolderPath(this.settings.graphFolderPath));
   }
 
-  private getExpandedCountsForFile(file: TFile): ReadonlyMap<GraphSide, number> {
+  private getExpandedLayerCountsForFile(file: TFile): ReadonlyMap<GraphSide, number> {
     if (this.expandedCenterPath !== file.path) {
       this.expandedCenterPath = file.path;
-      this.expandedCounts.clear();
+      this.expandedLayerCounts.clear();
     }
-    return this.expandedCounts;
+    return this.expandedLayerCounts;
   }
 
   private buildExpandUrl(file: TFile, side: GraphSide): string {
@@ -401,33 +400,16 @@ class RoamGraphSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
-      .setName("Neighbor limit")
-      .setDesc("Maximum linked notes to show on each side of the active note.")
+      .setName("Layer limit")
+      .setDesc("Maximum linked notes to show in each layer on both sides of the active note.")
       .addSlider((slider) => {
         slider
           .setLimits(1, 20, 1)
           .setDynamicTooltip()
-          .setValue(this.plugin.settings.neighborLimit)
+          .setValue(this.plugin.settings.layerLimitCount)
           .onChange((value) => {
             void (async () => {
-              this.plugin.settings.neighborLimit = value;
-              await this.plugin.saveSettings();
-              await this.plugin.refreshFromActiveFile({ force: true });
-            })();
-          });
-      });
-
-    new Setting(containerEl)
-      .setName("Expand step")
-      .setDesc("Additional linked notes to show each time a more node is clicked.")
-      .addSlider((slider) => {
-        slider
-          .setLimits(1, 20, 1)
-          .setDynamicTooltip()
-          .setValue(this.plugin.settings.neighborExpandStep)
-          .onChange((value) => {
-            void (async () => {
-              this.plugin.settings.neighborExpandStep = value;
+              this.plugin.settings.layerLimitCount = value;
               await this.plugin.saveSettings();
               await this.plugin.refreshFromActiveFile({ force: true });
             })();

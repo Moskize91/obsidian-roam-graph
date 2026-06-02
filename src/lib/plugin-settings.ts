@@ -7,8 +7,7 @@ const LEGACY_DEFAULT_NEIGHBOR_LIMIT = 18;
 
 export type PluginSettings = {
   graphFolderPath: string;
-  neighborLimit: number;
-  neighborExpandStep: number;
+  layerLimitCount: number;
   includeBacklinks: boolean;
   includeOutgoingLinks: boolean;
   openCanvasOnStartup: boolean;
@@ -18,13 +17,14 @@ export type PluginSettings = {
 type RawPluginSettings = Partial<PluginSettings>;
 type LegacyRawPluginSettings = RawPluginSettings & {
   canvasPath?: string;
+  neighborLimit?: number;
+  neighborExpandStep?: number;
 };
 
 export function getDefaultPluginSettings(): PluginSettings {
   return {
     graphFolderPath: "",
-    neighborLimit: 4,
-    neighborExpandStep: 4,
+    layerLimitCount: 4,
     includeBacklinks: true,
     includeOutgoingLinks: true,
     openCanvasOnStartup: true,
@@ -38,15 +38,14 @@ export function normalizePluginSettings(raw: LegacyRawPluginSettings | null | un
     typeof raw?.graphFolderPath === "string"
       ? normalizeFolderPath(raw.graphFolderPath)
       : normalizeFolderPath(getFolderPathFromLegacyCanvasPath(raw?.canvasPath));
-  const rawNeighborLimit = raw?.neighborLimit === LEGACY_DEFAULT_NEIGHBOR_LIMIT ? undefined : raw?.neighborLimit;
-  const neighborLimit = clampInteger(rawNeighborLimit, defaults.neighborLimit, 1, 20);
-  const neighborExpandStep = clampInteger(raw?.neighborExpandStep, defaults.neighborExpandStep, 1, 20);
+  const rawLayerLimitCount =
+    raw?.layerLimitCount ?? (raw?.neighborLimit === LEGACY_DEFAULT_NEIGHBOR_LIMIT ? undefined : raw?.neighborLimit);
+  const layerLimitCount = clampInteger(rawLayerLimitCount, defaults.layerLimitCount, 1, 20);
   const debounceMs = clampInteger(raw?.debounceMs, defaults.debounceMs, 0, 2000);
 
   return {
     graphFolderPath,
-    neighborLimit,
-    neighborExpandStep,
+    layerLimitCount,
     includeBacklinks: raw?.includeBacklinks ?? defaults.includeBacklinks,
     includeOutgoingLinks: raw?.includeOutgoingLinks ?? defaults.includeOutgoingLinks,
     openCanvasOnStartup: raw?.openCanvasOnStartup ?? defaults.openCanvasOnStartup,

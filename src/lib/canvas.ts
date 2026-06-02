@@ -6,6 +6,7 @@ export type CanvasFileNode = {
   y: number;
   width: number;
   height: number;
+  color?: string;
 };
 
 export type CanvasTextNode = {
@@ -16,6 +17,7 @@ export type CanvasTextNode = {
   y: number;
   width: number;
   height: number;
+  color?: string;
 };
 
 export type CanvasNode = CanvasFileNode | CanvasTextNode;
@@ -43,24 +45,25 @@ export type GraphCanvasInput = {
   center: GraphNeighbor;
   backlinks: GraphNeighbor[];
   outgoing: GraphNeighbor[];
-  neighborLimit: number;
-  neighborExpandStep: number;
-  expandedCounts: ReadonlyMap<GraphSide, number>;
+  layerLimitCount: number;
+  expandedLayerCounts: ReadonlyMap<GraphSide, number>;
   buildExpandUrl: (side: GraphSide) => string;
 };
 
 export type GraphSide = "backlinks" | "outgoing";
 
 const CENTER_NODE_ID = "center";
-const LEFT_COLUMN_X = -560;
 const CENTER_COLUMN_X = 0;
-const RIGHT_COLUMN_X = 560;
+const INNER_LAYER_GAP_X = 216;
+const LAYER_GAP_X = 173;
 const NODE_GAP_Y = 80;
-const EXPAND_NODE_GAP_Y = 64;
-const EMPTY_NODE_WIDTH = 320;
-const EMPTY_NODE_HEIGHT = 120;
 const EXPAND_NODE_WIDTH = 300;
 const EXPAND_NODE_HEIGHT = 120;
+const NODE_COLORS = {
+  center: "#7951ED",
+  backlinks: "#07B64F",
+  outgoing: "#EC7600",
+};
 const NEIGHBOR_SIZE_RANGE = {
   minWidth: 260,
   maxWidth: 420,
@@ -75,11 +78,12 @@ const CENTER_SIZE_RANGE = {
 };
 
 export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
+  const layerLimitCount = Math.max(1, Math.round(input.layerLimitCount));
   const backlinks = sortNeighborsNewestFirst(input.backlinks);
-  const outgoing = sortNeighborsNewestFirst(input.outgoing);
-  const backlinkSkeleton = backlinks.slice(0, input.neighborLimit);
-  const outgoingSkeleton = outgoing.slice(0, input.neighborLimit);
-  const sizeScale = buildSizeScale([input.center, ...backlinkSkeleton, ...outgoingSkeleton]);
+  const outgoing = input.outgoing;
+  const backlinkLayers = buildNeighborLayers(backlinks, layerLimitCount);
+  const outgoingLayers = buildNeighborLayers(outgoing, layerLimitCount);
+  const sizeScale = buildSizeScale([input.center, ...(backlinkLayers[0] ?? []), ...(outgoingLayers[0] ?? [])]);
   const centerSize = getNodeSize(input.center, CENTER_SIZE_RANGE, sizeScale);
   const center: CanvasFileNode = {
     id: CENTER_NODE_ID,
@@ -89,31 +93,28 @@ export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
     y: Math.round(-centerSize.height / 2),
     width: centerSize.width,
     height: centerSize.height,
+    color: NODE_COLORS.center,
   };
 
   const nodes: CanvasNode[] = [center];
   const edges: CanvasEdge[] = [];
 
-  const backlinkColumn = buildSideColumn({
+  const backlinkColumn = buildSideLayers({
     side: "backlinks",
     prefix: "backlink",
-    neighbors: backlinks,
-    columnX: LEFT_COLUMN_X,
+    layers: backlinkLayers,
+    center,
     sizeScale,
-    neighborLimit: input.neighborLimit,
-    neighborExpandStep: input.neighborExpandStep,
-    expandedCount: input.expandedCounts.get("backlinks") ?? 0,
+    expandedLayerCount: input.expandedLayerCounts.get("backlinks") ?? 0,
     buildExpandUrl: input.buildExpandUrl,
   });
-  const outgoingColumn = buildSideColumn({
+  const outgoingColumn = buildSideLayers({
     side: "outgoing",
     prefix: "outgoing",
-    neighbors: outgoing,
-    columnX: RIGHT_COLUMN_X,
+    layers: outgoingLayers,
+    center,
     sizeScale,
-    neighborLimit: input.neighborLimit,
-    neighborExpandStep: input.neighborExpandStep,
-    expandedCount: input.expandedCounts.get("outgoing") ?? 0,
+    expandedLayerCount: input.expandedLayerCounts.get("outgoing") ?? 0,
     buildExpandUrl: input.buildExpandUrl,
   });
   nodes.push(...backlinkColumn.nodes, ...outgoingColumn.nodes);
@@ -138,30 +139,16 @@ export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
     });
   });
 
-  if (input.backlinks.length === 0 && input.outgoing.length === 0) {
-    nodes.push({
-      id: "empty",
-      type: "text",
-      text: "No linked notes found.",
-      x: Math.round(RIGHT_COLUMN_X - EMPTY_NODE_WIDTH / 2),
-      y: Math.round(-EMPTY_NODE_HEIGHT / 2),
-      width: EMPTY_NODE_WIDTH,
-      height: EMPTY_NODE_HEIGHT,
-    });
-  }
-
   return { nodes, edges };
 }
 
-type SideColumnInput = {
+type SideLayerInput = {
   side: GraphSide;
   prefix: string;
-  neighbors: GraphNeighbor[];
-  columnX: number;
+  layers: GraphNeighbor[][];
+  center: CanvasFileNode;
   sizeScale: SizeScale;
-  neighborLimit: number;
-  neighborExpandStep: number;
-  expandedCount: number;
+  expandedLayerCount: number;
   buildExpandUrl: (side: GraphSide) => string;
 };
 
@@ -186,37 +173,53 @@ type SizeScale = {
   maxLogSize: number;
 };
 
-function buildSideColumn(input: SideColumnInput): SideColumn {
-  const skeletonNeighbors = input.neighbors.slice(0, input.neighborLimit);
-  const overflowNeighbors = input.neighbors.slice(input.neighborLimit);
-  const expandedCount = Math.max(0, Math.round(input.expandedCount));
-  const visibleOverflowCount = Math.min(expandedCount, overflowNeighbors.length);
-  const visibleOverflowNeighbors = overflowNeighbors.slice(0, visibleOverflowCount);
-  const hiddenCount = overflowNeighbors.length - visibleOverflowCount;
-  const expandStep = Math.max(1, Math.round(input.neighborExpandStep));
-  const skeletonNodes = buildFileNodes(input.prefix, skeletonNeighbors, input.columnX, input.sizeScale, 0);
-  const nodes: CanvasNode[] = [...skeletonNodes];
+function buildSideLayers(input: SideLayerInput): SideColumn {
+  const expandedLayerCount = Math.max(0, Math.round(input.expandedLayerCount));
+  const visibleLayerCount = Math.min(input.layers.length, input.layers.length === 0 ? 0 : expandedLayerCount + 1);
+  const nodes: CanvasNode[] = [];
+  let indexOffset = 0;
+  let edgeX = getFirstLayerEdgeX(input.side, input.center);
+  let previousLayerMaxWidth = 0;
 
-  const skeletonHeight = getColumnHeight(skeletonNodes, NODE_GAP_Y);
-  let y = -skeletonHeight / 2;
-  for (const node of skeletonNodes) {
-    node.y = Math.round(y);
-    y += node.height + NODE_GAP_Y;
+  for (let layerIndex = 0; layerIndex < visibleLayerCount; layerIndex += 1) {
+    if (layerIndex > 0) {
+      edgeX = getNextLayerEdgeX(input.side, edgeX, previousLayerMaxWidth);
+    }
+    const layerNodes = buildFileNodes(input.prefix, input.layers[layerIndex] ?? [], input.side, edgeX, input.sizeScale, indexOffset);
+    positionLayerNodes(layerNodes, input.side, edgeX);
+    nodes.push(...layerNodes);
+    previousLayerMaxWidth = getMaxNodeWidth(layerNodes);
+    indexOffset += layerNodes.length;
   }
 
-  let appendY = skeletonNodes.length > 0 ? y - NODE_GAP_Y + EXPAND_NODE_GAP_Y : EXPAND_NODE_GAP_Y;
-  const overflowNodes = buildFileNodes(input.prefix, visibleOverflowNeighbors, input.columnX, input.sizeScale, skeletonNodes.length);
-  for (const node of overflowNodes) {
-    node.y = Math.round(appendY);
-    appendY += node.height + NODE_GAP_Y;
-    nodes.push(node);
-  }
-
-  if (hiddenCount > 0) {
-    nodes.push(buildExpandNode(input.side, hiddenCount, expandStep, input.columnX, appendY, input.buildExpandUrl(input.side)));
+  if (input.layers.length > visibleLayerCount) {
+    edgeX = getNextLayerEdgeX(input.side, edgeX, previousLayerMaxWidth);
+    const hiddenCount = input.layers.slice(visibleLayerCount).reduce((total, layer) => total + layer.length, 0);
+    const nextLayerCount = input.layers[visibleLayerCount]?.length ?? 0;
+    const expandNode = buildExpandNode(input.side, hiddenCount, nextLayerCount, edgeX, input.buildExpandUrl(input.side));
+    positionLayerNodes([expandNode], input.side, edgeX);
+    nodes.push(expandNode);
   }
 
   return { nodes };
+}
+
+function buildNeighborLayers(neighbors: GraphNeighbor[], layerLimitCount: number): GraphNeighbor[][] {
+  const layers: GraphNeighbor[][] = [];
+  for (let index = 0; index < neighbors.length; index += layerLimitCount) {
+    layers.push(neighbors.slice(index, index + layerLimitCount));
+  }
+  return layers;
+}
+
+function getFirstLayerEdgeX(side: GraphSide, center: CanvasFileNode): number {
+  return side === "backlinks" ? center.x - INNER_LAYER_GAP_X : center.x + center.width + INNER_LAYER_GAP_X;
+}
+
+function getNextLayerEdgeX(side: GraphSide, currentEdgeX: number, previousLayerMaxWidth: number): number {
+  return side === "backlinks"
+    ? currentEdgeX - previousLayerMaxWidth - LAYER_GAP_X
+    : currentEdgeX + previousLayerMaxWidth + LAYER_GAP_X;
 }
 
 function sortNeighborsNewestFirst(neighbors: GraphNeighbor[]): GraphNeighbor[] {
@@ -229,7 +232,8 @@ function sortNeighborsNewestFirst(neighbors: GraphNeighbor[]): GraphNeighbor[] {
 function buildFileNodes(
   prefix: string,
   neighbors: GraphNeighbor[],
-  columnX: number,
+  side: GraphSide,
+  edgeX: number,
   sizeScale: SizeScale,
   indexOffset: number,
 ): CanvasFileNode[] {
@@ -239,10 +243,11 @@ function buildFileNodes(
       id: `${prefix}-${index + indexOffset + 1}`,
       type: "file" as const,
       file: neighbor.path,
-      x: Math.round(columnX - size.width / 2),
+      x: getNodeX(side, edgeX, size.width),
       y: 0,
       width: size.width,
       height: size.height,
+      color: NODE_COLORS[side],
     };
   });
 }
@@ -250,25 +255,42 @@ function buildFileNodes(
 function buildExpandNode(
   side: GraphSide,
   hiddenCount: number,
-  expandStep: number,
-  columnX: number,
-  y: number,
+  nextLayerCount: number,
+  edgeX: number,
   expandUrl: string,
 ): CanvasTextNode {
   const label = side === "backlinks" ? "backlinks" : "outgoing links";
-  const nextCount = Math.min(expandStep, hiddenCount);
   return {
     id: `${side}-expand`,
     type: "text",
-    text: `${hiddenCount} more ${label}\n\n[Show ${nextCount} more](${expandUrl})`,
-    x: Math.round(columnX - EXPAND_NODE_WIDTH / 2),
-    y: Math.round(y),
+    text: `${hiddenCount} more ${label}\n\n[Show ${nextLayerCount} more](${expandUrl})`,
+    x: getNodeX(side, edgeX, EXPAND_NODE_WIDTH),
+    y: 0,
     width: EXPAND_NODE_WIDTH,
     height: EXPAND_NODE_HEIGHT,
+    color: NODE_COLORS[side],
   };
 }
 
-function getColumnHeight(nodes: CanvasNode[], gap: number): number {
+function positionLayerNodes(nodes: CanvasNode[], side: GraphSide, edgeX: number): void {
+  const layerHeight = getLayerHeight(nodes, NODE_GAP_Y);
+  let y = -layerHeight / 2;
+  for (const node of nodes) {
+    node.x = getNodeX(side, edgeX, node.width);
+    node.y = Math.round(y);
+    y += node.height + NODE_GAP_Y;
+  }
+}
+
+function getNodeX(side: GraphSide, edgeX: number, width: number): number {
+  return Math.round(side === "backlinks" ? edgeX - width : edgeX);
+}
+
+function getMaxNodeWidth(nodes: CanvasNode[]): number {
+  return nodes.reduce((maxWidth, node) => Math.max(maxWidth, node.width), 0);
+}
+
+function getLayerHeight(nodes: CanvasNode[], gap: number): number {
   return nodes.reduce((total, node) => total + node.height, 0) + Math.max(nodes.length - 1, 0) * gap;
 }
 
