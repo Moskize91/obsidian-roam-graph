@@ -1,49 +1,90 @@
 # Roam Graph
 
-Roam Graph is an Obsidian plugin that keeps a generated Canvas graph in the right sidebar. The graph follows the active Markdown note: the active note is placed at the center, and nearby linked notes are arranged around it.
+Roam Graph is an [Obsidian](https://obsidian.md/) plugin that keeps a small, focus-following graph in the right sidebar.
 
-## Status
+The graph follows the note you are editing. Your active note stays in the center, backlinks appear on the left, outgoing links appear on the right, and nearby daily notes appear above and below when the active note is a daily note.
 
-This repository is an early prototype. The plugin uses Obsidian's native Canvas renderer instead of a custom graph view.
+Roam Graph uses Obsidian's native Canvas renderer. The graph you see is a real Obsidian Canvas file, not a custom UI. This keeps the experience close to Obsidian's own editing model and Canvas quality.
 
-## How It Works
+## Usage
 
-Roam Graph listens for active file changes in Obsidian. When the active file is a Markdown note, it:
+After enabling the plugin, Roam Graph opens a generated Obsidian Canvas in the right sidebar.
 
-1. Reads outgoing links and backlinks from Obsidian's metadata cache.
-2. Builds a small `.canvas` file with the active note in the center.
-3. Opens that generated Canvas in the right sidebar.
+Open a Markdown note and the graph will follow it automatically. You can also open or refresh the graph from the command palette:
 
-The generated Canvas file is rewritten whenever the active note changes.
+- `Roam Graph: Open graph for active note`
+- `Roam Graph: Refresh graph`
 
-## Development
+You can also use the ribbon icon to open the graph for the active note.
 
-Install dependencies:
+Click a note in the graph to navigate to it. Roam Graph keeps the generated Canvas in the sidebar and opens the selected note in the main workspace.
 
-```sh
-npm install
+## Features
+
+- Follow the active Markdown note automatically.
+- Show backlinks and outgoing links around the active note.
+- Show nearby daily notes when the active note matches your Daily Notes settings.
+- Expand additional link layers from the Canvas.
+- Use native Obsidian Canvas nodes and links instead of a custom graph UI.
+- Keep the graph in the right sidebar while you write.
+
+## Settings
+
+- **Graph folder [default: vault root]**: Choose where the generated `Roam Graph.canvas` file is stored.
+- **Layer limit [default: 4]**: Set how many linked notes appear in each visible layer.
+- **Daily context limit [default: 2]**: Set how many nearby daily notes appear on each side of the active daily note. Set this to `0` to hide daily note context.
+
+## Installation
+
+Install Roam Graph from Obsidian's Community Plugins browser when it is available there:
+
+1. Open **Settings**.
+2. Go to **Community plugins**.
+3. Search for `Roam Graph`.
+4. Install and enable the plugin.
+
+For manual installation, copy the release files into:
+
+```text
+<vault>/.obsidian/plugins/roam-graph/
 ```
 
-Build the Obsidian plugin bundle:
-
-```sh
-npm run build
-```
-
-Run typecheck and build:
-
-```sh
-npm run check
-```
-
-The Obsidian plugin release files are staged in `plugin-dist/`:
+The plugin folder should contain:
 
 - `main.js`
 - `manifest.json`
 - `styles.css`
 
-## Limitations
+Then reload Obsidian and enable Roam Graph from **Community plugins**.
 
-- The generated Canvas is not force-read-only. Manual edits may be overwritten on the next focus change.
-- Native Canvas opening behavior is used as-is. If Obsidian changes Canvas internals, some interaction details may need adjustment.
-- The graph layout is intentionally simple in the first prototype.
+## FAQ
+
+### Why does Roam Graph create a Canvas file?
+
+Roam Graph uses Obsidian's built-in Canvas as its renderer. The generated Canvas is the sidebar graph.
+
+This is intentional: Roam Graph does not maintain a separate visual system. The graph uses Obsidian's native Canvas behavior, styling, file nodes, and interactions.
+
+### Can I edit the generated Canvas?
+
+You can, but manual edits may be overwritten the next time Roam Graph refreshes. Treat `Roam Graph.canvas` as a generated file.
+
+### Does Roam Graph modify my Markdown notes?
+
+No. Roam Graph reads Obsidian's link metadata and writes only the generated Canvas file.
+
+### How does daily note context work?
+
+Roam Graph reads your Obsidian Daily Notes settings. When the active note matches your configured daily note folder and date format, nearby daily notes are shown above and below the center note.
+
+### Is this a replacement for Obsidian's Graph view?
+
+No. Roam Graph is a local, focus-following Canvas graph. It is meant to stay close to your current note while you work.
+
+## For contributors
+
+Developer notes live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Run the project checks with:
+
+```sh
+npm run check
+```
