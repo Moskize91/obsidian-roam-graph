@@ -7,56 +7,85 @@ export type ResolveGraphOptions = {
   limit: number;
 };
 
-type MutableNeighbor = {
-  path: string;
-  outgoing: boolean;
-  backlink: boolean;
+export type ResolvedGraph = {
+  backlinks: GraphNeighbor[];
+  outgoing: GraphNeighbor[];
 };
 
-export function resolveNeighbors(app: App, centerFile: TFile, options: ResolveGraphOptions): GraphNeighbor[] {
-  const byPath = new Map<string, MutableNeighbor>();
+type NeighborRelation = {
+  path: string;
+  size: number;
+  mtime: number;
+};
 
-  if (options.includeOutgoingLinks) {
-    addOutgoingLinks(app, centerFile, byPath);
-  }
-  if (options.includeBacklinks) {
-    addBacklinks(app, centerFile, byPath);
-  }
+export function resolveNeighbors(app: App, centerFile: TFile, options: ResolveGraphOptions): ResolvedGraph {
+  const outgoing = options.includeOutgoingLinks ? resolveOutgoingLinks(app, centerFile, options.limit) : [];
+  const outgoingPaths = new Set(outgoing.map((item) => item.path));
+  const backlinks = options.includeBacklinks
+    ? resolveBacklinks(app, centerFile, options.limit, {
+        excludePaths: outgoingPaths,
+      })
+    : [];
 
-  return [...byPath.values()]
-    .sort((a, b) => {
-      const aScore = Number(a.outgoing) + Number(a.backlink);
-      const bScore = Number(b.outgoing) + Number(b.backlink);
-      if (aScore !== bScore) return bScore - aScore;
-      return a.path.localeCompare(b.path);
-    })
-    .slice(0, options.limit)
-    .map((item) => ({
-      path: item.path,
-      direction: item.outgoing && item.backlink ? "bidirectional" : item.outgoing ? "outgoing" : "backlink",
-    }));
+  return {
+    backlinks,
+    outgoing,
+  };
 }
 
-function addOutgoingLinks(app: App, centerFile: TFile, byPath: Map<string, MutableNeighbor>): void {
+export function getGraphFileInfo(file: TFile): GraphNeighbor {
+  return {
+    path: file.path,
+    size: file.stat.size,
+  };
+}
+
+function resolveOutgoingLinks(app: App, centerFile: TFile, limit: number): GraphNeighbor[] {
+  const byPath = new Map<string, NeighborRelation>();
   const resolved = app.metadataCache.resolvedLinks[centerFile.path] ?? {};
   for (const path of Object.keys(resolved)) {
     const file = app.vault.getAbstractFileByPath(path);
     if (!isMarkdownFile(file) || file.path === centerFile.path) continue;
-    const item = byPath.get(file.path) ?? { path: file.path, outgoing: false, backlink: false };
-    item.outgoing = true;
-    byPath.set(file.path, item);
+    byPath.set(file.path, getNeighborRelation(file));
   }
+
+  return sortAndLimitRelations(byPath, limit);
 }
 
-function addBacklinks(app: App, centerFile: TFile, byPath: Map<string, MutableNeighbor>): void {
+function resolveBacklinks(
+  app: App,
+  centerFile: TFile,
+  limit: number,
+  options: { excludePaths: ReadonlySet<string> },
+): GraphNeighbor[] {
+  const byPath = new Map<string, NeighborRelation>();
   for (const [sourcePath, targets] of Object.entries(app.metadataCache.resolvedLinks)) {
     if (!(centerFile.path in targets)) continue;
     const file = app.vault.getAbstractFileByPath(sourcePath);
     if (!isMarkdownFile(file) || file.path === centerFile.path) continue;
-    const item = byPath.get(file.path) ?? { path: file.path, outgoing: false, backlink: false };
-    item.backlink = true;
-    byPath.set(file.path, item);
+    if (options.excludePaths.has(file.path)) continue;
+    byPath.set(file.path, getNeighborRelation(file));
   }
+
+  return sortAndLimitRelations(byPath, limit);
+}
+
+function getNeighborRelation(file: TFile): NeighborRelation {
+  return {
+    path: file.path,
+    size: file.stat.size,
+    mtime: file.stat.mtime,
+  };
+}
+
+function sortAndLimitRelations(byPath: Map<string, NeighborRelation>, limit: number): GraphNeighbor[] {
+  return [...byPath.values()]
+    .sort((a, b) => {
+      if (a.mtime !== b.mtime) return b.mtime - a.mtime;
+      return a.path.localeCompare(b.path);
+    })
+    .slice(0, limit)
+    .map(({ path, size }) => ({ path, size }));
 }
 
 function isMarkdownFile(file: unknown): file is TFile {

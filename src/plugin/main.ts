@@ -17,7 +17,7 @@ import {
   normalizePluginSettings,
   type PluginSettings,
 } from "../lib/plugin-settings";
-import { resolveNeighbors } from "../lib/graph";
+import { getGraphFileInfo, resolveNeighbors } from "../lib/graph";
 
 export default class RoamGraphPlugin extends Plugin {
   settings: PluginSettings = getDefaultPluginSettings();
@@ -140,8 +140,9 @@ export default class RoamGraphPlugin extends Plugin {
       limit: this.settings.neighborLimit,
     });
     const canvas = buildGraphCanvas({
-      centerPath: file.path,
-      neighbors,
+      center: getGraphFileInfo(file),
+      backlinks: neighbors.backlinks,
+      outgoing: neighbors.outgoing,
     });
 
     await this.app.vault.modify(canvasFile, `${JSON.stringify(canvas, null, 2)}\n`);
@@ -359,10 +360,10 @@ class RoamGraphSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Neighbor limit")
-      .setDesc("Maximum linked notes to show around the active note.")
+      .setDesc("Maximum linked notes to show on each side of the active note.")
       .addSlider((slider) => {
         slider
-          .setLimits(1, 80, 1)
+          .setLimits(1, 20, 1)
           .setDynamicTooltip()
           .setValue(this.plugin.settings.neighborLimit)
           .onChange((value) => {
