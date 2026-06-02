@@ -1,17 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { resolveDailyContext } from "./daily-context";
-
-vi.mock("obsidian", () => ({
-  normalizePath: (path: string) => path.replace(/\\/g, "/").replace(/\/+/g, "/"),
-  moment: (input: string, format: string, strict: boolean) => {
-    const dateInput = input.split(" ")[0] ?? input;
-    const valid = strict && format === "YYYY-MM-DD" && /^\d{4}-\d{2}-\d{2}$/.test(dateInput);
-    return {
-      isValid: () => valid,
-      valueOf: () => (valid ? Date.parse(`${dateInput}T00:00:00.000Z`) : Number.NaN),
-    };
-  },
-}));
 
 type FakeFile = {
   path: string;

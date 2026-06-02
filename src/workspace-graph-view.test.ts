@@ -2,23 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import { WorkspaceGraphView } from "./workspace-graph-view";
 import type { TFile as ObsidianTFile, WorkspaceLeaf } from "obsidian";
 
-vi.mock("obsidian", () => {
-  class TFile {
-    path = "";
-    extension = "";
-  }
-
-  class MarkdownView {
-    constructor(readonly file: TFile) {}
-  }
-
-  class Notice {
-    constructor(readonly message: string) {}
-  }
-
-  return { MarkdownView, Notice, TFile };
-});
-
 type FakeLeaf = {
   parent?: unknown;
   view: unknown;

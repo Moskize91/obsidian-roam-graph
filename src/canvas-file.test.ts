@@ -2,25 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import { ensureGraphCanvasFile, writeCanvasFile } from "./canvas-file";
 import type { TFile as ObsidianTFile, TFolder as ObsidianTFolder } from "obsidian";
 
-vi.mock("obsidian", () => {
-  class TFile {
-    constructor(
-      readonly path: string,
-      readonly extension: string,
-    ) {}
-  }
-
-  class TFolder {
-    constructor(readonly path: string) {}
-  }
-
-  return {
-    normalizePath: (path: string) => path.replace(/\\/g, "/").replace(/\/+/g, "/"),
-    TFile,
-    TFolder,
-  };
-});
-
 type FakeVault = {
   getAbstractFileByPath: ReturnType<typeof vi.fn>;
   create: ReturnType<typeof vi.fn>;
