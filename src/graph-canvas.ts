@@ -95,12 +95,14 @@ export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
   nodes.push(...dailyColumn.nodes, ...backlinkColumn.nodes, ...outgoingColumn.nodes);
   edges.push(...dailyColumn.edges);
 
-  backlinkColumn.relationNodes.forEach((node) => {
-    edges.push(buildRelationEdge(node, "backlinks"));
+  const backlinkRelationNodes = new Map(backlinkColumn.relationNodes.map((node) => [node.id, node]));
+  backlinkColumn.nodes.forEach((node) => {
+    edges.push(buildSideEdge(backlinkRelationNodes.get(node.id) ?? node, "backlinks"));
   });
 
-  outgoingColumn.relationNodes.forEach((node) => {
-    edges.push(buildRelationEdge(node, "outgoing"));
+  const outgoingRelationNodes = new Map(outgoingColumn.relationNodes.map((node) => [node.id, node]));
+  outgoingColumn.nodes.forEach((node) => {
+    edges.push(buildSideEdge(outgoingRelationNodes.get(node.id) ?? node, "outgoing"));
   });
 
   return { nodes, edges };
@@ -309,13 +311,37 @@ function buildFileNodes(
       width: size.width,
       height: size.height,
       relation: neighbor,
-      ...getRelationNodeStyle(neighbor, side),
+      color: NODE_COLORS[side],
     };
   });
 }
 
 function toCanvasFileNode({ relation: _relation, ...node }: RelationFileNode): CanvasFileNode {
   return node;
+}
+
+function buildSideEdge(node: CanvasNode | RelationFileNode, side: GraphSide): CanvasEdge {
+  return "relation" in node ? buildRelationEdge(node, side) : buildDefaultSideEdge(node, side);
+}
+
+function buildDefaultSideEdge(node: CanvasNode, side: GraphSide): CanvasEdge {
+  if (side === "backlinks") {
+    return {
+      id: `edge-${node.id}`,
+      fromNode: node.id,
+      fromSide: "right",
+      toNode: CENTER_NODE_ID,
+      toSide: "left",
+    };
+  }
+
+  return {
+    id: `edge-${node.id}`,
+    fromNode: CENTER_NODE_ID,
+    fromSide: "right",
+    toNode: node.id,
+    toSide: "left",
+  };
 }
 
 function buildRelationEdge(node: RelationFileNode, side: GraphSide): CanvasEdge {
@@ -346,10 +372,6 @@ function buildRelationEdge(node: RelationFileNode, side: GraphSide): CanvasEdge 
 }
 
 function getRelationEdgeStyle(relation: LinkRelation, side: GraphSide): Pick<CanvasEdge, "color"> {
-  return getRelationHighlightColor(relation, side);
-}
-
-function getRelationNodeStyle(relation: LinkRelation, side: GraphSide): Pick<CanvasFileNode, "color"> {
   return getRelationHighlightColor(relation, side);
 }
 

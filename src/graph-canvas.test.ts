@@ -47,10 +47,12 @@ describe("buildGraphCanvas", () => {
     expect(canvas.nodes.find((node) => node.id === "backlink-1")).toMatchObject({
       type: "file",
       file: "Back New.md",
+      color: "#07B64F",
     });
     expect(canvas.nodes.find((node) => node.id === "outgoing-1")).toMatchObject({
       type: "file",
       file: "Out A.md",
+      color: "#EC7600",
     });
     expect(canvas.nodes.find((node) => node.id === "daily-next-1")).toMatchObject({
       type: "file",
@@ -64,6 +66,7 @@ describe("buildGraphCanvas", () => {
       expect.arrayContaining([
         expect.objectContaining({ fromNode: "backlink-1", toNode: "center" }),
         expect.objectContaining({ fromNode: "center", toNode: "outgoing-1" }),
+        expect.objectContaining({ fromNode: "center", toNode: "outgoing-expand" }),
         expect.objectContaining({ fromNode: "daily-next-1", toNode: "center" }),
       ]),
     );
@@ -136,7 +139,9 @@ describe("buildGraphCanvas", () => {
       toEnd: "arrow",
       color: "#EC7600",
     });
-    expect(canvas.nodes.find((node) => node.id === "backlink-1")).not.toHaveProperty("color");
+    expect(canvas.nodes.find((node) => node.id === "backlink-1")).toMatchObject({
+      color: "#07B64F",
+    });
     expect(canvas.nodes.find((node) => node.id === "backlink-2")).toMatchObject({
       color: "#07B64F",
     });
