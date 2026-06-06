@@ -18,7 +18,12 @@ function file(path: string, size: number, mtime: number): FakeFile {
   };
 }
 
-function app(files: FakeFile[], links: Record<string, string[]>, resolvedLinks: Record<string, Record<string, number>>) {
+function app(
+  files: FakeFile[],
+  links: Record<string, string[]>,
+  resolvedLinks: Record<string, Record<string, number>>,
+  embeds: Record<string, string[]> = {},
+) {
   const byPath = new Map(files.map((item) => [item.path, item]));
   return {
     metadataCache: {
@@ -32,8 +37,16 @@ function app(files: FakeFile[], links: Record<string, string[]>, resolvedLinks: 
             },
           },
         })),
+        embeds: (embeds[centerFile.path] ?? []).map((link, index) => ({
+          link,
+          position: {
+            start: {
+              offset: (links[centerFile.path]?.length ?? 0) * 10 + index * 10,
+            },
+          },
+        })),
       }),
-      getFirstLinkpathDest: (link: string) => byPath.get(link) ?? null,
+      getFirstLinkpathDest: (link: string) => byPath.get(link.split("#")[0] ?? link) ?? null,
     },
     vault: {
       getAbstractFileByPath: (path: string) => byPath.get(path) ?? null,
@@ -52,7 +65,7 @@ describe("getGraphFile", () => {
 });
 
 describe("resolveLinkNeighborhood", () => {
-  it("resolves outgoing links by count and first position, and excludes duplicate backlinks", () => {
+  it("resolves outgoing links by count and first position, and marks bidirectional links", () => {
     const center = file("Center.md", 100, 1000);
     const alpha = file("Alpha.md", 20, 200);
     const beta = file("Beta.md", 30, 300);
@@ -71,10 +84,17 @@ describe("resolveLinkNeighborhood", () => {
 
     expect(resolveLinkNeighborhood(fakeApp as never, center as never, { includeOutgoingLinks: true, includeBacklinks: true })).toEqual({
       outgoing: [
-        { path: "Beta.md", size: 30, mtime: 300 },
-        { path: "Alpha.md", size: 20, mtime: 200 },
+        { path: "Beta.md", size: 30, mtime: 300, direction: "outgoing", outgoingStrength: "weak" },
+        {
+          path: "Alpha.md",
+          size: 20,
+          mtime: 200,
+          direction: "bidirectional",
+          outgoingStrength: "weak",
+          backlinkStrength: "weak",
+        },
       ],
-      backlinks: [{ path: "Gamma.md", size: 40, mtime: 900 }],
+      backlinks: [{ path: "Gamma.md", size: 40, mtime: 900, direction: "backlink", backlinkStrength: "weak" }],
     });
   });
 
@@ -96,8 +116,8 @@ describe("resolveLinkNeighborhood", () => {
     const fakeApp = app([center, first, second], { "Center.md": ["Second.md", "First.md"] }, {});
 
     expect(resolveLinkNeighborhood(fakeApp as never, center as never, { includeOutgoingLinks: true, includeBacklinks: false }).outgoing).toEqual([
-      { path: "Second.md", size: 20, mtime: 200 },
-      { path: "First.md", size: 10, mtime: 100 },
+      { path: "Second.md", size: 20, mtime: 200, direction: "outgoing", outgoingStrength: "weak" },
+      { path: "First.md", size: 10, mtime: 100, direction: "outgoing", outgoingStrength: "weak" },
     ]);
   });
 
@@ -108,8 +128,58 @@ describe("resolveLinkNeighborhood", () => {
     const fakeApp = app([center, beta, alpha], {}, { "Beta.md": { "Center.md": 1 }, "Alpha.md": { "Center.md": 1 } });
 
     expect(resolveLinkNeighborhood(fakeApp as never, center as never, { includeOutgoingLinks: false, includeBacklinks: true }).backlinks).toEqual([
-      { path: "Alpha.md", size: 10, mtime: 500 },
-      { path: "Beta.md", size: 20, mtime: 500 },
+      { path: "Alpha.md", size: 10, mtime: 500, direction: "backlink", backlinkStrength: "weak" },
+      { path: "Beta.md", size: 20, mtime: 500, direction: "backlink", backlinkStrength: "weak" },
     ]);
+  });
+
+  it("marks embeds and heading or block links as strong references", () => {
+    const center = file("Center.md", 100, 1000);
+    const outgoingStrong = file("Outgoing Strong.md", 20, 200);
+    const backlinkStrong = file("Backlink Strong.md", 30, 300);
+    const bidirectional = file("Bidirectional.md", 40, 400);
+    const fakeApp = app(
+      [center, outgoingStrong, backlinkStrong, bidirectional],
+      {
+        "Center.md": ["Outgoing Strong.md#Heading", "Bidirectional.md"],
+        "Backlink Strong.md": ["Center.md#^block-id"],
+      },
+      {
+        "Backlink Strong.md": { "Center.md": 1 },
+        "Bidirectional.md": { "Center.md": 1 },
+      },
+      {
+        "Bidirectional.md": ["Center.md"],
+      },
+    );
+
+    expect(resolveLinkNeighborhood(fakeApp as never, center as never, { includeOutgoingLinks: true, includeBacklinks: true })).toEqual({
+      outgoing: [
+        {
+          path: "Outgoing Strong.md",
+          size: 20,
+          mtime: 200,
+          direction: "outgoing",
+          outgoingStrength: "strong",
+        },
+        {
+          path: "Bidirectional.md",
+          size: 40,
+          mtime: 400,
+          direction: "bidirectional",
+          outgoingStrength: "weak",
+          backlinkStrength: "strong",
+        },
+      ],
+      backlinks: [
+        {
+          path: "Backlink Strong.md",
+          size: 30,
+          mtime: 300,
+          direction: "backlink",
+          backlinkStrength: "strong",
+        },
+      ],
+    });
   });
 });

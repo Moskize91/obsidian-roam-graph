@@ -26,8 +26,11 @@ export type CanvasEdge = {
   id: string;
   fromNode: string;
   fromSide: "top" | "right" | "bottom" | "left";
+  fromEnd?: "none" | "arrow";
   toNode: string;
   toSide: "top" | "right" | "bottom" | "left";
+  toEnd?: "none" | "arrow";
+  color?: string;
 };
 
 export type CanvasData = {

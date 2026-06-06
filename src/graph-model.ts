@@ -6,9 +6,19 @@ export type GraphFile = {
 
 export type GraphSide = "backlinks" | "outgoing";
 
+export type LinkStrength = "weak" | "strong";
+
+export type LinkRelationDirection = "backlink" | "outgoing" | "bidirectional";
+
+export type LinkRelation = GraphFile & {
+  direction: LinkRelationDirection;
+  outgoingStrength?: LinkStrength;
+  backlinkStrength?: LinkStrength;
+};
+
 export type LinkNeighborhood = {
-  backlinks: GraphFile[];
-  outgoing: GraphFile[];
+  backlinks: LinkRelation[];
+  outgoing: LinkRelation[];
 };
 
 export type DailyContext = {
