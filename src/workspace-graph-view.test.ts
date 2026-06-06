@@ -6,6 +6,7 @@ type FakeLeaf = {
   parent?: unknown;
   view: unknown;
   openFile: ReturnType<typeof vi.fn>;
+  getViewState: ReturnType<typeof vi.fn>;
 };
 
 async function fakeFile(path: string, extension: string): Promise<ObsidianTFile> {
@@ -21,18 +22,20 @@ async function markdownView(file: ObsidianTFile): Promise<unknown> {
   return new MarkdownViewCtor(file);
 }
 
-function leaf(parent: unknown, view: unknown = {}): FakeLeaf {
+function leaf(parent: unknown, view: unknown = {}, stateFile?: string): FakeLeaf {
   const fakeLeaf = {
     parent,
     view,
     openFile: vi.fn(async (file: ObsidianTFile) => {
       fakeLeaf.view = { file };
     }),
+    getViewState: vi.fn(() => ({ state: stateFile ? { file: stateFile } : {} })),
   };
   return fakeLeaf;
 }
 
 function app(leaves: FakeLeaf[], rootLeaf: FakeLeaf, rightSplit: object) {
+  const getRightLeaf = vi.fn<() => WorkspaceLeaf | null>(() => null);
   return {
     workspace: {
       rightSplit,
@@ -43,7 +46,7 @@ function app(leaves: FakeLeaf[], rootLeaf: FakeLeaf, rightSplit: object) {
         leaves.forEach((item) => callback(item as unknown as WorkspaceLeaf)),
       ),
       getLeaf: vi.fn(() => rootLeaf),
-      getRightLeaf: vi.fn(() => null),
+      getRightLeaf,
       revealLeaf: vi.fn(),
     },
   };
@@ -112,5 +115,26 @@ describe("WorkspaceGraphView", () => {
     expect(mainLeaf.openFile).toHaveBeenCalledWith(otherFile, { active: true });
     expect(refreshForFile).toHaveBeenCalledWith(otherFile, { force: true, targetGraphLeaf: graphLeaf });
     expect(restoreCanvasInLeaf).not.toHaveBeenCalled();
+  });
+
+  it("reuses a deferred graph canvas leaf from the right sidebar", async () => {
+    const rightSplit = {};
+    const canvasFile = await fakeFile("Roam Graph.canvas", "canvas");
+    const centerFile = await fakeFile("Center.md", "md");
+    const mainLeaf = leaf({}, {});
+    const graphLeaf = leaf(rightSplit, {}, canvasFile.path);
+    const newRightLeaf = leaf(rightSplit, {});
+    const fakeApp = app([mainLeaf, graphLeaf], mainLeaf, rightSplit);
+    fakeApp.workspace.getRightLeaf.mockReturnValue(newRightLeaf as unknown as WorkspaceLeaf);
+    const view = new WorkspaceGraphView(fakeApp as never, () => canvasFile.path, () => centerFile.path, vi.fn(), vi.fn());
+
+    await view.openCanvasInRightSidebar(canvasFile, {
+      reveal: false,
+      openIfMissing: true,
+    });
+
+    expect(fakeApp.workspace.getRightLeaf).not.toHaveBeenCalled();
+    expect(graphLeaf.openFile).toHaveBeenCalledWith(canvasFile, { active: false });
+    expect(newRightLeaf.openFile).not.toHaveBeenCalled();
   });
 });
