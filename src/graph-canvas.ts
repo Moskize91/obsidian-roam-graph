@@ -1,10 +1,10 @@
 import type { CanvasData, CanvasEdge, CanvasFileNode, CanvasNode, CanvasTextNode } from "./canvas-types";
-import type { DailyContext, GraphFile, GraphSide } from "./graph-model";
+import type { DailyContext, GraphFile, GraphSide, LinkRelation } from "./graph-model";
 
 export type GraphCanvasInput = {
   center: GraphFile;
-  backlinks: GraphFile[];
-  outgoing: GraphFile[];
+  backlinks: LinkRelation[];
+  outgoing: LinkRelation[];
   dailyContext: DailyContext;
   layerLimitCount: number;
   expandedLayerCounts: ReadonlyMap<GraphSide, number>;
@@ -23,6 +23,10 @@ const NODE_COLORS = {
   center: "#7951ED",
   backlinks: "#07B64F",
   outgoing: "#EC7600",
+};
+const EDGE_COLORS = {
+  backlinks: NODE_COLORS.backlinks,
+  outgoing: NODE_COLORS.outgoing,
 };
 const NEIGHBOR_SIZE_RANGE = {
   minWidth: 260,
@@ -91,24 +95,14 @@ export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
   nodes.push(...dailyColumn.nodes, ...backlinkColumn.nodes, ...outgoingColumn.nodes);
   edges.push(...dailyColumn.edges);
 
+  const backlinkRelationNodes = new Map(backlinkColumn.relationNodes.map((node) => [node.id, node]));
   backlinkColumn.nodes.forEach((node) => {
-    edges.push({
-      id: `edge-${node.id}`,
-      fromNode: node.id,
-      fromSide: "right",
-      toNode: CENTER_NODE_ID,
-      toSide: "left",
-    });
+    edges.push(buildSideEdge(backlinkRelationNodes.get(node.id) ?? node, "backlinks"));
   });
 
+  const outgoingRelationNodes = new Map(outgoingColumn.relationNodes.map((node) => [node.id, node]));
   outgoingColumn.nodes.forEach((node) => {
-    edges.push({
-      id: `edge-${node.id}`,
-      fromNode: CENTER_NODE_ID,
-      fromSide: "right",
-      toNode: node.id,
-      toSide: "left",
-    });
+    edges.push(buildSideEdge(outgoingRelationNodes.get(node.id) ?? node, "outgoing"));
   });
 
   return { nodes, edges };
@@ -117,7 +111,7 @@ export function buildGraphCanvas(input: GraphCanvasInput): CanvasData {
 type SideLayerInput = {
   side: GraphSide;
   prefix: string;
-  layers: GraphFile[][];
+  layers: LinkRelation[][];
   center: CanvasFileNode;
   sizeScale: SizeScale;
   expandedLayerCount: number;
@@ -126,6 +120,11 @@ type SideLayerInput = {
 
 type SideColumn = {
   nodes: CanvasNode[];
+  relationNodes: RelationFileNode[];
+};
+
+type RelationFileNode = CanvasFileNode & {
+  relation: LinkRelation;
 };
 
 type DailyColumnInput = {
@@ -161,6 +160,7 @@ function buildSideLayers(input: SideLayerInput): SideColumn {
   const expandedLayerCount = Math.max(0, Math.round(input.expandedLayerCount));
   const visibleLayerCount = Math.min(input.layers.length, input.layers.length === 0 ? 0 : expandedLayerCount + 1);
   const nodes: CanvasNode[] = [];
+  const relationNodes: RelationFileNode[] = [];
   let indexOffset = 0;
   let edgeX = getFirstLayerEdgeX(input.side, input.center);
   let previousLayerMaxWidth = 0;
@@ -171,7 +171,8 @@ function buildSideLayers(input: SideLayerInput): SideColumn {
     }
     const layerNodes = buildFileNodes(input.prefix, input.layers[layerIndex] ?? [], input.side, edgeX, input.sizeScale, indexOffset);
     positionLayerNodes(layerNodes, input.side, edgeX);
-    nodes.push(...layerNodes);
+    nodes.push(...layerNodes.map(toCanvasFileNode));
+    relationNodes.push(...layerNodes);
     previousLayerMaxWidth = getMaxNodeWidth(layerNodes);
     indexOffset += layerNodes.length;
   }
@@ -185,11 +186,11 @@ function buildSideLayers(input: SideLayerInput): SideColumn {
     nodes.push(expandNode);
   }
 
-  return { nodes };
+  return { nodes, relationNodes };
 }
 
-function buildNeighborLayers(neighbors: GraphFile[], layerLimitCount: number): GraphFile[][] {
-  const layers: GraphFile[][] = [];
+function buildNeighborLayers<T extends GraphFile>(neighbors: T[], layerLimitCount: number): T[][] {
+  const layers: T[][] = [];
   for (let index = 0; index < neighbors.length; index += layerLimitCount) {
     layers.push(neighbors.slice(index, index + layerLimitCount));
   }
@@ -284,7 +285,7 @@ function getNextLayerEdgeX(side: GraphSide, currentEdgeX: number, previousLayerM
     : currentEdgeX + previousLayerMaxWidth + LAYER_GAP_X;
 }
 
-function sortNeighborsNewestFirst(neighbors: GraphFile[]): GraphFile[] {
+function sortNeighborsNewestFirst<T extends GraphFile>(neighbors: T[]): T[] {
   return [...neighbors].sort((a, b) => {
     if (a.mtime !== b.mtime) return b.mtime - a.mtime;
     return a.path.localeCompare(b.path);
@@ -293,12 +294,12 @@ function sortNeighborsNewestFirst(neighbors: GraphFile[]): GraphFile[] {
 
 function buildFileNodes(
   prefix: string,
-  neighbors: GraphFile[],
+  neighbors: LinkRelation[],
   side: GraphSide,
   edgeX: number,
   sizeScale: SizeScale,
   indexOffset: number,
-): CanvasFileNode[] {
+): RelationFileNode[] {
   return neighbors.map((neighbor, index) => {
     const size = getNodeSize(neighbor, NEIGHBOR_SIZE_RANGE, sizeScale);
     return {
@@ -309,9 +310,79 @@ function buildFileNodes(
       y: 0,
       width: size.width,
       height: size.height,
+      relation: neighbor,
       color: NODE_COLORS[side],
     };
   });
+}
+
+function toCanvasFileNode({ relation: _relation, ...node }: RelationFileNode): CanvasFileNode {
+  return node;
+}
+
+function buildSideEdge(node: CanvasNode | RelationFileNode, side: GraphSide): CanvasEdge {
+  return "relation" in node ? buildRelationEdge(node, side) : buildDefaultSideEdge(node, side);
+}
+
+function buildDefaultSideEdge(node: CanvasNode, side: GraphSide): CanvasEdge {
+  if (side === "backlinks") {
+    return {
+      id: `edge-${node.id}`,
+      fromNode: node.id,
+      fromSide: "right",
+      toNode: CENTER_NODE_ID,
+      toSide: "left",
+    };
+  }
+
+  return {
+    id: `edge-${node.id}`,
+    fromNode: CENTER_NODE_ID,
+    fromSide: "right",
+    toNode: node.id,
+    toSide: "left",
+  };
+}
+
+function buildRelationEdge(node: RelationFileNode, side: GraphSide): CanvasEdge {
+  if (side === "backlinks") {
+    return {
+      id: `edge-${node.id}`,
+      fromNode: node.id,
+      fromSide: "right",
+      toNode: CENTER_NODE_ID,
+      toSide: "left",
+      ...getRelationEdgeStyle(node.relation, side),
+    };
+  }
+
+  const edge: CanvasEdge = {
+    id: `edge-${node.id}`,
+    fromNode: CENTER_NODE_ID,
+    fromSide: "right",
+    toNode: node.id,
+    toSide: "left",
+    toEnd: "arrow",
+    ...getRelationEdgeStyle(node.relation, side),
+  };
+  if (node.relation.direction === "bidirectional") {
+    edge.fromEnd = "arrow";
+  }
+  return edge;
+}
+
+function getRelationEdgeStyle(relation: LinkRelation, side: GraphSide): Pick<CanvasEdge, "color"> {
+  return getRelationHighlightColor(relation, side);
+}
+
+function getRelationHighlightColor(relation: LinkRelation, side: GraphSide): Pick<CanvasEdge, "color"> {
+  if (side === "backlinks") {
+    return relation.backlinkStrength === "strong" ? { color: EDGE_COLORS.backlinks } : {};
+  }
+  if (relation.outgoingStrength === "strong" || relation.backlinkStrength === "strong") {
+    return { color: EDGE_COLORS.outgoing };
+  }
+  return {};
 }
 
 function buildExpandNode(
