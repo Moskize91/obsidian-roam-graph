@@ -134,12 +134,24 @@ export class WorkspaceGraphView {
 
   private isGeneratedCanvasLeaf(leaf: WorkspaceLeaf): boolean {
     const file = this.getFileFromLeaf(leaf);
-    return file?.path === this.getCanvasPath();
+    return file?.path === this.getCanvasPath() || this.getFilePathFromViewState(leaf) === this.getCanvasPath();
   }
 
   private getFileFromLeaf(leaf: WorkspaceLeaf | null): TFile | null {
     const viewWithFile = leaf?.view as { file?: unknown } | undefined;
     return viewWithFile?.file instanceof TFile ? viewWithFile.file : null;
+  }
+
+  private getFilePathFromViewState(leaf: WorkspaceLeaf | null): string | null {
+    const getViewState = (leaf as { getViewState?: () => { state?: { file?: unknown } } } | null)?.getViewState;
+    if (typeof getViewState !== "function") return null;
+
+    try {
+      const file = getViewState.call(leaf)?.state?.file;
+      return typeof file === "string" ? file : null;
+    } catch {
+      return null;
+    }
   }
 
   private getMainWorkspaceLeaf(): WorkspaceLeaf {
